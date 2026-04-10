@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteNav } from "@/components/SiteNav";
 import "./globals.css";
@@ -14,8 +14,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "19th Hole Golf League",
-  description: "Schedule, standings, scores, and skins for the 19th Hole Golf League.",
+  title: {
+    default: "19th Hole Golf League @ Hickory Sticks",
+    template: "%s | 19th Hole Golf League @ Hickory Sticks",
+  },
+  description: "Schedule, standings, scores, and skins for the 19th Hole Golf League @ Hickory Sticks.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#022c22",
 };
 
 export default function RootLayout({
@@ -28,9 +38,11 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#f6f9f4] text-zinc-900">
+      <body className="min-h-full min-h-[100dvh] flex flex-col bg-[#f6f9f4] text-zinc-900">
         <SiteNav />
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">{children}</main>
+        <main className="mx-auto w-full min-w-0 max-w-5xl flex-1 pt-6 pb-[max(2rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pt-8 sm:pb-10 md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]">
+          {children}
+        </main>
       </body>
     </html>
   );

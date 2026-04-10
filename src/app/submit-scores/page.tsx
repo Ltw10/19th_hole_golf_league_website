@@ -6,7 +6,10 @@ export const dynamic = "force-dynamic";
 
 type FormProps = ComponentProps<typeof SubmitScoreForm>;
 
-export default async function SubmitScoresPage() {
+export default async function SubmitScoresPage(props: PageProps<"/submit-scores">) {
+  const searchParams = await props.searchParams;
+  const matchParam = searchParams.match;
+  const matchIdFromUrl = typeof matchParam === "string" ? matchParam : "";
   let loadError: string | null = null;
   let weeks: FormProps["weeks"] = [];
   let matches: FormProps["matches"] = [];
@@ -38,16 +41,39 @@ export default async function SubmitScoresPage() {
     return <p className="text-red-700">{loadError}</p>;
   }
 
+  let initialWeekId: string | undefined;
+  let initialMatchId: string | undefined;
+  if (matchIdFromUrl) {
+    const match = matches.find((m) => m.id === matchIdFromUrl);
+    const week = match ? weeks.find((w) => w.id === match.week_id) : undefined;
+    if (
+      match?.team_a_id &&
+      match.team_b_id &&
+      week &&
+      week.phase !== "handicap"
+    ) {
+      initialWeekId = week.id;
+      initialMatchId = match.id;
+    }
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-emerald-950">Submit scores</h1>
-        <p className="mt-1 text-zinc-600">
+        <h1 className="text-xl font-semibold text-emerald-950 sm:text-2xl">Submit scores</h1>
+        <p className="mt-1 text-sm text-zinc-600 sm:text-base">
           Enter the 10-point split for a match and optionally upload a scorecard photo. One submission
           per match; duplicates require an admin.
         </p>
       </div>
-      <SubmitScoreForm weeks={weeks} matches={matches} teams={teams} players={players} />
+      <SubmitScoreForm
+        weeks={weeks}
+        matches={matches}
+        teams={teams}
+        players={players}
+        initialWeekId={initialWeekId}
+        initialMatchId={initialMatchId}
+      />
     </div>
   );
 }

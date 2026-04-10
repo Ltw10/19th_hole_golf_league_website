@@ -1,7 +1,8 @@
+import { CHAMPIONSHIP_WEEK_NUMBER } from "@/lib/nhgl";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 /**
- * Sets the week 19 championship match to the top two teams by regular-season points (ties break by team_id).
+ * Sets the championship-week match to the top two teams by Regular Season points (ties break by team_id).
  */
 export async function refreshChampionshipMatchup(): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
@@ -24,7 +25,7 @@ export async function refreshChampionshipMatchup(): Promise<{ ok: true } | { ok:
     const { data: week, error: wErr } = await admin
       .from("season_weeks")
       .select("id")
-      .eq("week_number", 19)
+      .eq("week_number", CHAMPIONSHIP_WEEK_NUMBER)
       .maybeSingle();
 
     if (wErr || !week) return { ok: false, error: wErr?.message ?? "Championship week not found." };

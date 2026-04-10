@@ -4,7 +4,7 @@ Next.js app for schedule, regular-season standings, public score and skins entry
 
 ## Setup
 
-1. **Create a Supabase project** (or use a shared project). In **Project Settings → API → Exposed schemas**, add **`nhgl`** so PostgREST can see it.
+1. **Create a Supabase project** (or use a shared project). **Required:** open **Project Settings → Data API** (older UIs: **Settings → API**). Under **Exposed schemas** (or “API settings” / “Schema”), add **`nhgl`** and save. If `nhgl` exists in Postgres but is not listed here, the API will error with **`invalid schema: nhgl`** — this step is separate from running migrations.
 
 2. **Apply migrations** (Supabase CLI):
 
@@ -26,6 +26,10 @@ Next.js app for schedule, regular-season standings, public score and skins entry
    npm install
    npm run dev
    ```
+
+## Debugging database connection
+
+- Set **`DEBUG_SUPABASE=1`** or **`NEXT_PUBLIC_NHGL_DEBUG=1`** in `.env.local` and restart, then visit **`GET /api/debug/db`** for a JSON check of anon + service-role queries against `nhgl.teams`.
 
 ## Features
 

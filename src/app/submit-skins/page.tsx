@@ -33,12 +33,11 @@ export default async function SubmitSkinsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-emerald-950">Submit skins</h1>
-        <p className="mt-1 text-zinc-600">
-          One person enters the full week: each hole skin (player + hole), who bought in, and payouts.
-          Only one bundle per week — if you need a redo, ask an admin.
+        <h1 className="text-xl font-semibold text-emerald-950 sm:text-2xl">Submit Skins</h1>
+        <p className="mt-1 text-sm text-zinc-600 sm:text-base">
+          Skins submission for one week. One submission per week.
         </p>
       </div>
       <SubmitSkinsForm weeks={weeks} players={players} />
