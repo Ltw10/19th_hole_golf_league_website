@@ -19,6 +19,21 @@ export const metadata: Metadata = {
     template: "%s | 19th Hole Golf League @ Hickory Sticks",
   },
   description: "Schedule, standings, scores, and skins for the 19th Hole Golf League @ Hickory Sticks.",
+  icons: {
+    icon: [{ url: "/19th_hole_golf_league_logo_cropped.png", type: "image/png" }],
+    apple: [
+      {
+        url: "/19th_hole_golf_league_logo_cropped.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
+  appleWebApp: {
+    capable: true,
+    title: "19th Hole Golf League",
+    statusBarStyle: "default",
+  },
 };
 
 export const viewport: Viewport = {
