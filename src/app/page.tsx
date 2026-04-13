@@ -13,6 +13,11 @@ const links = [
     description: "Team points and skins leaders",
   },
   {
+    href: "/handicap-helper",
+    title: "Handicap helper",
+    description: "Log rounds and track average strokes vs par",
+  },
+  {
     href: "/submit-scores",
     title: "Submit scores",
     description: "Match points and scorecard photo",
