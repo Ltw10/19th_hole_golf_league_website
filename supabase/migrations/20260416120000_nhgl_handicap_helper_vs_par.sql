@@ -1,6 +1,8 @@
--- Handicap = average strokes over/under par (score - par), not average raw score.
+-- Handicap = rounded 80% of average strokes over/under par (score - par).
 
-CREATE OR REPLACE VIEW nhgl.v_handicap_helper_summary AS
+DROP VIEW IF EXISTS nhgl.v_handicap_helper_summary;
+
+CREATE VIEW nhgl.v_handicap_helper_summary AS
 WITH ranked AS (
   SELECT
     h.player_id,
@@ -14,7 +16,7 @@ WITH ranked AS (
 SELECT
   p.id AS player_id,
   p.name AS player_name,
-  ROUND(AVG(ranked.versus_par)::numeric, 1) AS handicap,
+  ROUND((AVG(ranked.versus_par) * 0.8)::numeric)::int AS handicap,
   COUNT(*)::int AS rounds_in_avg
 FROM nhgl.players p
 INNER JOIN nhgl.teams t ON t.id = p.team_id

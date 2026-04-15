@@ -21,7 +21,11 @@ export default async function HandicapHelperPage() {
   try {
     const supabase = await createServerSupabaseClient();
     const [sumRes, playersRes, teamsRes] = await Promise.all([
-      supabase.from("v_handicap_helper_summary").select("*").order("player_name", { ascending: true }),
+      supabase
+        .from("v_handicap_helper_summary")
+        .select("*")
+        .order("handicap", { ascending: true })
+        .order("player_name", { ascending: true }),
       supabase.from("players").select("id, name, team_id").order("name", { ascending: true }),
       supabase.from("teams").select("id, name"),
     ]);

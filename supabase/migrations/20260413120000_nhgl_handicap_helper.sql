@@ -23,7 +23,7 @@ CREATE POLICY nhgl_handicap_helper_scores_insert ON nhgl.handicap_helper_scores 
 GRANT SELECT, INSERT ON nhgl.handicap_helper_scores TO anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON nhgl.handicap_helper_scores TO service_role;
 
--- One row per league player who has at least one score; handicap = avg (score - par) over up to 5 most recent rounds.
+-- One row per league player who has at least one score; handicap = rounded 80% of avg (score - par) over up to 5 most recent rounds.
 CREATE OR REPLACE VIEW nhgl.v_handicap_helper_summary AS
 WITH ranked AS (
   SELECT
@@ -38,7 +38,7 @@ WITH ranked AS (
 SELECT
   p.id AS player_id,
   p.name AS player_name,
-  ROUND(AVG(ranked.versus_par)::numeric, 1) AS handicap,
+  ROUND((AVG(ranked.versus_par) * 0.8)::numeric)::int AS handicap,
   COUNT(*)::int AS rounds_in_avg
 FROM nhgl.players p
 INNER JOIN nhgl.teams t ON t.id = p.team_id

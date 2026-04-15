@@ -148,9 +148,11 @@ export function HandicapHelperClient({
 
   const sortedSummary = useMemo(
     () =>
-      [...initialSummary].sort((a, b) =>
-        a.player_name.localeCompare(b.player_name, undefined, { sensitivity: "base" }),
-      ),
+      [...initialSummary].sort((a, b) => {
+        const d = Number(a.handicap) - Number(b.handicap);
+        if (d !== 0) return d;
+        return a.player_name.localeCompare(b.player_name, undefined, { sensitivity: "base" });
+      }),
     [initialSummary],
   );
 
@@ -161,8 +163,9 @@ export function HandicapHelperClient({
           <h1 className="text-xl font-semibold text-emerald-950 sm:text-2xl">Handicap helper</h1>
           <p className="mt-1 text-sm text-zinc-600 sm:text-base">
             Log <span className="font-semibold text-emerald-900/90">9-hole</span> rounds to track
-            your average strokes over or under par from up to five most recent scores (score minus
-            par for each round, then averaged). Tap a row to see every round on file.
+            your handicap as 80% of your average strokes over or under par from up to five most
+            recent scores (score minus par for each round, then rounded to a whole number). Tap a
+            row to see every round on file.
           </p>
         </div>
         <button
@@ -310,7 +313,7 @@ export function HandicapHelperClient({
                   {detailFor.player_name}
                 </h2>
                 <p className="mt-0.5 text-xs text-emerald-900/65">
-                  9-hole handicap (avg vs par, up to five rounds):{" "}
+                  9-hole handicap (80% of avg vs par, up to five rounds):{" "}
                   <span className="font-mono font-semibold tabular-nums text-emerald-950">
                     {formatVersusParHandicap(Number(detailFor.handicap))}
                   </span>
@@ -387,7 +390,7 @@ export function HandicapHelperClient({
         <div className={scorecardShell}>
           <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2 text-center">
             <span className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-emerald-900/65">
-              9-hole handicap — avg strokes vs par (up to 5 rounds)
+              9-hole handicap — 80% of avg strokes vs par (up to 5 rounds)
             </span>
           </div>
           <div className="overflow-x-auto">
@@ -449,16 +452,13 @@ export function HandicapHelperClient({
   );
 }
 
-/** Avg (score − par): over par as plain number; under par as +N (e.g. +1 for one under). */
+/** Handicap value is stored as rounded integer: over par as plain number; under par as +N. */
 function formatVersusParHandicap(diff: number): string {
   if (!Number.isFinite(diff)) return "—";
-  const v = Math.round(diff * 10) / 10;
+  const v = Math.round(diff);
   if (v === 0) return "0";
-  if (v < 0) {
-    const abs = Math.round(Math.abs(v) * 10) / 10;
-    return `+${abs % 1 === 0 ? String(abs) : abs.toFixed(1)}`;
-  }
-  return v % 1 === 0 ? String(v) : v.toFixed(1);
+  if (v < 0) return `+${Math.abs(v)}`;
+  return String(v);
 }
 
 function formatDisplayDate(iso: string) {
