@@ -9,6 +9,9 @@ export const CHAMPIONSHIP_WEEK_NUMBER = 16 as const;
 /** Roster bucket for skins-only guests; must not appear in team standings UI. */
 export const SKINS_SUBSTITUTES_TEAM_NAME = "Skins substitutes" as const;
 
+/** Players created from Handicap helper “add name” are assigned to this team. */
+export const HANDICAP_HELPER_TEAM_NAME = "Handicap helper" as const;
+
 export function filterTeamStandingsRows<T extends { team_name: string }>(rows: T[]): T[] {
   return rows.filter((r) => r.team_name !== SKINS_SUBSTITUTES_TEAM_NAME);
 }

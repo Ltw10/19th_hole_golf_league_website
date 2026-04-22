@@ -56,6 +56,20 @@ export function HandicapHelperClient({
   const [submitStatus, setSubmitStatus] = useState<"idle" | "loading" | "ok" | "err">("idle");
   const [submitMessage, setSubmitMessage] = useState("");
 
+  const [addedPlayers, setAddedPlayers] = useState<PlayerOption[]>([]);
+  const [newPlayerName, setNewPlayerName] = useState("");
+  const [addPlayerLoading, setAddPlayerLoading] = useState(false);
+  const [addPlayerError, setAddPlayerError] = useState("");
+
+  const allPlayerOptions = useMemo(() => {
+    const byId = new Map<string, PlayerOption>();
+    for (const p of players) byId.set(p.id, p);
+    for (const p of addedPlayers) byId.set(p.id, p);
+    return [...byId.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
+  }, [players, addedPlayers]);
+
   const loadDetail = useCallback(
     async (row: HandicapSummaryRow) => {
       setDetailFor(row);
@@ -92,6 +106,27 @@ export function HandicapHelperClient({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [addOpen, detailFor]);
+
+  async function addNewPlayer() {
+    const name = newPlayerName.trim();
+    if (!name) {
+      setAddPlayerError("Enter a name.");
+      return;
+    }
+    setAddPlayerLoading(true);
+    setAddPlayerError("");
+    const { data, error } = await supabase.rpc("create_handicap_helper_player", { p_name: name });
+    setAddPlayerLoading(false);
+    if (error) {
+      setAddPlayerError(error.message);
+      return;
+    }
+    const id = String(data);
+    setAddedPlayers((prev) => [...prev, { id, name }]);
+    setPlayerId(id);
+    setNewPlayerName("");
+    router.refresh();
+  }
 
   async function onSubmitScore(e: React.FormEvent) {
     e.preventDefault();
@@ -174,6 +209,8 @@ export function HandicapHelperClient({
           onClick={() => {
             setSubmitStatus("idle");
             setSubmitMessage("");
+            setNewPlayerName("");
+            setAddPlayerError("");
             setAddOpen(true);
           }}
         >
@@ -217,13 +254,44 @@ export function HandicapHelperClient({
                   onChange={(e) => setPlayerId(e.target.value)}
                 >
                   <option value="">Select name…</option>
-                  {players.map((p) => (
+                  {allPlayerOptions.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
                   ))}
                 </select>
               </label>
+              <div className="space-y-2 rounded-md border border-emerald-900/20 bg-white/50 px-3 py-3">
+                <p className="text-xs font-medium text-emerald-900/80">Or add a new name</p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    placeholder="e.g. Tim"
+                    className="min-w-0 flex-1 rounded-md border border-emerald-900/25 bg-white px-3 py-2 text-sm"
+                    value={newPlayerName}
+                    onChange={(e) => {
+                      setNewPlayerName(e.target.value);
+                      setAddPlayerError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void addNewPlayer();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-md border border-emerald-900/30 px-3 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-900/5 disabled:opacity-50"
+                    disabled={addPlayerLoading}
+                    onClick={() => void addNewPlayer()}
+                  >
+                    {addPlayerLoading ? "Adding…" : "Add name"}
+                  </button>
+                </div>
+                {addPlayerError ? <p className="text-xs text-red-700">{addPlayerError}</p> : null}
+              </div>
               <label className="block text-sm font-medium text-emerald-950">
                 Date played
                 <input
