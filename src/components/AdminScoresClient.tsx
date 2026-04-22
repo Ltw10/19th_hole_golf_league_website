@@ -30,6 +30,28 @@ type WeekOption = {
   phase: string;
 };
 
+type PlayerOption = {
+  id: string;
+  name: string;
+};
+
+type HandicapRow = {
+  id: string;
+  player_id: string;
+  player_name: string;
+  played_date: string;
+  score: number;
+  par: number;
+  created_at: string;
+};
+
+type HandicapPlayerSummary = {
+  player_id: string;
+  player_name: string;
+  handicap: number;
+  rounds_in_avg: number;
+};
+
 function AccordionChevron({ group, className }: { group: "week" | "match"; className?: string }) {
   const openRotate =
     group === "week" ? "group-open/week:rotate-180" : "group-open/match:rotate-180";
@@ -72,11 +94,32 @@ function groupByWeek(rows: Row[]) {
     .sort((a, b) => a.week_number - b.week_number);
 }
 
+function formatVersusParHandicap(diff: number): string {
+  if (!Number.isFinite(diff)) return "—";
+  if (diff === 0) return "0";
+  if (diff < 0) return `+${Math.abs(diff)}`;
+  return String(diff);
+}
+
+function formatDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function AdminScoresClient() {
   const [secret, setSecret] = useState("");
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [handicapRows, setHandicapRows] = useState<HandicapRow[]>([]);
+  const [players, setPlayers] = useState<PlayerOption[]>([]);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [cleanupWeekId, setCleanupWeekId] = useState("");
+  const [selectedHandicapPlayerId, setSelectedHandicapPlayerId] = useState<string | null>(null);
+  const [editingHandicapRowId, setEditingHandicapRowId] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -92,10 +135,14 @@ export function AdminScoresClient() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
       setRows(json.data as Row[]);
+      setHandicapRows((json.handicap_scores as HandicapRow[] | undefined) ?? []);
+      setPlayers((json.players as PlayerOption[] | undefined) ?? []);
       setWeeks((json.weeks as WeekOption[] | undefined) ?? []);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
       setRows(null);
+      setHandicapRows([]);
+      setPlayers([]);
       setWeeks([]);
     } finally {
       setLoading(false);
@@ -117,6 +164,64 @@ export function AdminScoresClient() {
   }
 
   const weekGroups = useMemo(() => (rows ? groupByWeek(rows) : []), [rows]);
+  const handicapSummary = useMemo<HandicapPlayerSummary[]>(() => {
+    const byPlayer = new Map<string, HandicapRow[]>();
+    for (const row of handicapRows) {
+      const list = byPlayer.get(row.player_id) ?? [];
+      list.push(row);
+      byPlayer.set(row.player_id, list);
+    }
+    return [...byPlayer.entries()]
+      .map(([player_id, list]) => {
+        const sorted = [...list].sort((a, b) => {
+          const d = b.played_date.localeCompare(a.played_date);
+          if (d !== 0) return d;
+          return b.created_at.localeCompare(a.created_at);
+        });
+        const latest = sorted.slice(0, 5);
+        const avgDiff =
+          latest.reduce((sum, r) => sum + (Number(r.score) - Number(r.par)), 0) / Math.max(latest.length, 1);
+        return {
+          player_id,
+          player_name: list[0]?.player_name ?? "Unknown player",
+          handicap: Math.round(avgDiff * 0.8),
+          rounds_in_avg: latest.length,
+        };
+      })
+      .sort((a, b) => {
+        const d = a.handicap - b.handicap;
+        if (d !== 0) return d;
+        return a.player_name.localeCompare(b.player_name, undefined, { sensitivity: "base" });
+      });
+  }, [handicapRows]);
+
+  const selectedHandicapPlayer = useMemo(
+    () => handicapSummary.find((p) => p.player_id === selectedHandicapPlayerId) ?? null,
+    [handicapSummary, selectedHandicapPlayerId],
+  );
+
+  const selectedHandicapRows = useMemo(() => {
+    if (!selectedHandicapPlayerId) return [];
+    return handicapRows
+      .filter((r) => r.player_id === selectedHandicapPlayerId)
+      .sort((a, b) => {
+        const d = b.played_date.localeCompare(a.played_date);
+        if (d !== 0) return d;
+        return b.created_at.localeCompare(a.created_at);
+      });
+  }, [handicapRows, selectedHandicapPlayerId]);
+
+  useEffect(() => {
+    if (handicapSummary.length === 0) {
+      setSelectedHandicapPlayerId(null);
+      setEditingHandicapRowId(null);
+      return;
+    }
+    if (!selectedHandicapPlayerId || !handicapSummary.some((p) => p.player_id === selectedHandicapPlayerId)) {
+      setSelectedHandicapPlayerId(handicapSummary[0]?.player_id ?? null);
+      setEditingHandicapRowId(null);
+    }
+  }, [handicapSummary, selectedHandicapPlayerId]);
 
   async function refreshChampionship() {
     setLoading(true);
@@ -269,7 +374,131 @@ export function AdminScoresClient() {
       {err && <p className="text-red-700">{err}</p>}
 
       {rows && (
-        <div className="space-y-3">
+        <div className="space-y-6">
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold text-emerald-950">Handicap helper scores</h2>
+            <p className="text-sm text-zinc-600">Click a player to view submitted scores and edit each row.</p>
+            <div className="overflow-hidden rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
+              <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2 text-center">
+                <span className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-emerald-900/65">
+                  9-hole handicap leaderboard
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                {handicapSummary.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-emerald-900/70">No handicap helper scores found.</p>
+                ) : (
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-emerald-900/25 bg-emerald-950 text-[#f2efe4]">
+                        <th className="border-r border-emerald-700/50 px-3 py-2 text-left text-[0.65rem] font-bold uppercase tracking-wider">
+                          Player
+                        </th>
+                        <th className="w-24 px-3 py-2 text-right text-[0.65rem] font-bold uppercase tracking-wider">
+                          Handicap
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {handicapSummary.map((p, i) => (
+                        <tr
+                          key={p.player_id}
+                          className={`cursor-pointer border-b border-emerald-900/15 last:border-b-0 ${
+                            i % 2 === 1 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"
+                          } ${selectedHandicapPlayerId === p.player_id ? "ring-2 ring-inset ring-emerald-700/40" : ""}`}
+                          onClick={() => {
+                            setSelectedHandicapPlayerId(p.player_id);
+                            setEditingHandicapRowId(null);
+                          }}
+                        >
+                          <td className="border-r border-emerald-900/15 px-3 py-2 font-medium text-emerald-950">
+                            {p.player_name}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-sm font-semibold tabular-nums text-emerald-950">
+                            {formatVersusParHandicap(p.handicap)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {selectedHandicapPlayer ? (
+              <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] p-3 shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
+                <div className="flex items-center justify-between gap-2 border-b border-emerald-900/20 pb-2">
+                  <div>
+                    <h3 className="text-base font-semibold text-emerald-950">{selectedHandicapPlayer.player_name}</h3>
+                    <p className="text-xs text-emerald-900/70">
+                      Handicap {formatVersusParHandicap(selectedHandicapPlayer.handicap)} (based on{" "}
+                      {selectedHandicapPlayer.rounds_in_avg} round
+                      {selectedHandicapPlayer.rounds_in_avg === 1 ? "" : "s"})
+                    </p>
+                  </div>
+                </div>
+                {selectedHandicapRows.length === 0 ? (
+                  <p className="mt-3 text-sm text-zinc-600">No scores for this player.</p>
+                ) : (
+                  <ul className="mt-3 space-y-2">
+                    {selectedHandicapRows.map((r) => (
+                      <li key={r.id} className="rounded-md border border-emerald-900/15 bg-white/70 p-3">
+                        {editingHandicapRowId === r.id ? (
+                          <HandicapScoreEditor
+                            row={r}
+                            players={players}
+                            onCancel={() => setEditingHandicapRowId(null)}
+                            onError={setErr}
+                            onSave={async (draft) => {
+                              const res = await fetch(`/api/admin/handicap-helper/${draft.id}`, {
+                                method: "PATCH",
+                                headers: { ...authHeader(), "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  player_id: draft.player_id,
+                                  played_date: draft.played_date,
+                                  score: draft.score,
+                                  par: draft.par,
+                                }),
+                              });
+                              const json = await res.json();
+                              if (!res.ok) {
+                                setErr(json.error ?? "Save failed");
+                                return;
+                              }
+                              setErr("");
+                              setEditingHandicapRowId(null);
+                              await load();
+                            }}
+                          />
+                        ) : (
+                          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <span className="font-medium text-emerald-950">{formatDate(r.played_date)}</span>
+                              <span className="font-mono tabular-nums text-zinc-700">
+                                Score {r.score} / Par {r.par}
+                              </span>
+                              <span className="font-mono tabular-nums text-emerald-900">
+                                Vs par {formatVersusParHandicap(r.score - r.par)}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="rounded border border-emerald-700 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-900 hover:bg-emerald-100"
+                              onClick={() => setEditingHandicapRowId(r.id)}
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
+          </section>
+
+          <div className="space-y-3">
           {weekGroups.map((g) => (
             <details
               key={g.weekId}
@@ -346,8 +575,115 @@ export function AdminScoresClient() {
               </div>
             </details>
           ))}
+          </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function HandicapScoreEditor({
+  row,
+  players,
+  onSave,
+  onCancel,
+  onError,
+}: {
+  row: HandicapRow;
+  players: PlayerOption[];
+  onSave: (row: HandicapRow) => Promise<void>;
+  onCancel: () => void;
+  onError: (msg: string) => void;
+}) {
+  const [draft, setDraft] = useState(row);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraft(row);
+  }, [row]);
+
+  const hasChanges =
+    draft.player_id !== row.player_id ||
+    draft.played_date !== row.played_date ||
+    draft.score !== row.score ||
+    draft.par !== row.par;
+
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="grid gap-2 sm:grid-cols-4">
+        <label className="block sm:col-span-2">
+          Player
+          <select
+            className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
+            value={draft.player_id}
+            onChange={(e) => setDraft({ ...draft, player_id: e.target.value })}
+          >
+            {players.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          Date
+          <input
+            type="date"
+            className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
+            value={draft.played_date}
+            onChange={(e) => setDraft({ ...draft, played_date: e.target.value })}
+          />
+        </label>
+        <label className="block">
+          Score
+          <input
+            type="number"
+            min={18}
+            max={200}
+            className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
+            value={draft.score}
+            onChange={(e) => setDraft({ ...draft, score: Number(e.target.value) })}
+          />
+        </label>
+      </div>
+      <div className="flex items-end justify-between gap-3">
+        <label className="block w-28">
+          Par
+          <input
+            type="number"
+            min={18}
+            max={144}
+            className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
+            value={draft.par}
+            onChange={(e) => setDraft({ ...draft, par: Number(e.target.value) })}
+          />
+        </label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="rounded border border-zinc-300 px-3 py-1.5 text-zinc-700"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={saving || !hasChanges}
+            className="rounded bg-emerald-800 px-3 py-1.5 text-white disabled:opacity-50"
+            onClick={async () => {
+              onError("");
+              setSaving(true);
+              try {
+                await onSave(draft);
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

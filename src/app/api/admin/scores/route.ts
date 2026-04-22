@@ -20,22 +20,44 @@ type SubmissionRow = Record<string, unknown> & {
   submitted_by_player_id: string | null;
 };
 
+type HandicapRow = Record<string, unknown> & {
+  id: string;
+  player_id: string;
+  played_date: string;
+  score: number;
+  par: number;
+  created_at: string;
+};
+
 /** List score submissions (admin) and weeks (for test cleanup dropdown). */
 export async function GET(req: Request) {
   if (!verify(req)) return unauthorized();
   const admin = createAdminSupabaseClient();
-  const [{ data: rawRows, error }, { data: weeks, error: wErr }, { data: teams, error: tErr }] =
-    await Promise.all([
-      admin.from("score_submissions").select("*").order("created_at", { ascending: false }),
-      admin.from("season_weeks").select("id, week_number, week_date, phase").order("week_number", {
-        ascending: true,
-      }),
-      admin.from("teams").select("id, name"),
-    ]);
+  const [
+    { data: rawRows, error },
+    { data: weeks, error: wErr },
+    { data: teams, error: tErr },
+    { data: players, error: pListErr },
+    { data: rawHandicapRows, error: hErr },
+  ] = await Promise.all([
+    admin.from("score_submissions").select("*").order("created_at", { ascending: false }),
+    admin.from("season_weeks").select("id, week_number, week_date, phase").order("week_number", {
+      ascending: true,
+    }),
+    admin.from("teams").select("id, name"),
+    admin.from("players").select("id, name").order("name", { ascending: true }),
+    admin
+      .from("handicap_helper_scores")
+      .select("id, player_id, played_date, score, par, created_at")
+      .order("played_date", { ascending: false })
+      .order("created_at", { ascending: false }),
+  ]);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (wErr) return NextResponse.json({ error: wErr.message }, { status: 500 });
   if (tErr) return NextResponse.json({ error: tErr.message }, { status: 500 });
+  if (pListErr) return NextResponse.json({ error: pListErr.message }, { status: 500 });
+  if (hErr) return NextResponse.json({ error: hErr.message }, { status: 500 });
 
   const teamMap = new Map((teams ?? []).map((t) => [t.id as string, t.name as string]));
   const weekMap = new Map(
@@ -79,5 +101,11 @@ export async function GET(req: Request) {
     };
   });
 
-  return NextResponse.json({ data: data ?? [], weeks: weeks ?? [] });
+  const allPlayerNameById = new Map((players ?? []).map((p) => [p.id as string, p.name as string]));
+  const handicap_scores = (rawHandicapRows as HandicapRow[] | null)?.map((row) => ({
+    ...row,
+    player_name: allPlayerNameById.get(row.player_id) ?? "Unknown player",
+  }));
+
+  return NextResponse.json({ data: data ?? [], weeks: weeks ?? [], handicap_scores: handicap_scores ?? [], players: players ?? [] });
 }
