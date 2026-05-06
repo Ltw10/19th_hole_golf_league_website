@@ -9,6 +9,7 @@ type SkinRow = {
   player_name: string;
   skins_won: number;
   money_won: number;
+  money_buyin: number;
   net_money: number;
 };
 
@@ -31,13 +32,18 @@ export default async function StandingsPage() {
         .from("v_skins_player_stats")
         .select("*")
         .order("skins_won", { ascending: false })
-        .order("money_won", { ascending: false }),
+        .order("net_money", { ascending: false }),
     ]);
 
     if (tErr) loadError = tErr.message;
     else {
       teamRows = filterTeamStandingsRows((teams ?? []) as TeamRow[]);
-      skinRows = (skins ?? []) as SkinRow[];
+      skinRows = ((skins ?? []) as SkinRow[]).filter((row) => {
+        const skinsWon = Number(row.skins_won ?? 0);
+        const moneyWon = Number(row.money_won ?? 0);
+        const moneyBuyin = Number(row.money_buyin ?? 0);
+        return skinsWon > 0 || moneyWon > 0 || moneyBuyin > 0;
+      });
       if (sErr) skinWarning = sErr.message;
     }
   } catch (e) {

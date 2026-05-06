@@ -9,6 +9,7 @@ export type HandicapSummaryRow = {
   player_name: string;
   handicap: number;
   rounds_in_avg: number;
+  rounds_submitted: number;
 };
 
 type PlayerOption = { id: string; name: string };
@@ -186,6 +187,8 @@ export function HandicapHelperClient({
       [...initialSummary].sort((a, b) => {
         const d = Number(a.handicap) - Number(b.handicap);
         if (d !== 0) return d;
+        const roundsDiff = Number(b.rounds_submitted) - Number(a.rounds_submitted);
+        if (roundsDiff !== 0) return roundsDiff;
         return a.player_name.localeCompare(b.player_name, undefined, { sensitivity: "base" });
       }),
     [initialSummary],
@@ -480,6 +483,14 @@ export function HandicapHelperClient({
                       scope="col"
                       className="min-w-[6.5rem] px-3 py-2 text-right text-[0.65rem] font-bold uppercase tracking-wider"
                     >
+                      #
+                      <br />
+                      submitted
+                    </th>
+                    <th
+                      scope="col"
+                      className="min-w-[6.5rem] px-3 py-2 text-right text-[0.65rem] font-bold uppercase tracking-wider"
+                    >
                       9-hole
                       <br />
                       handicap
@@ -504,6 +515,9 @@ export function HandicapHelperClient({
                     >
                       <td className="border-r border-emerald-900/15 px-3 py-2 font-medium text-emerald-950">
                         {row.player_name}
+                      </td>
+                      <td className="border-r border-emerald-900/15 px-3 py-2 text-right font-mono text-sm tabular-nums text-emerald-900/90">
+                        {Number(row.rounds_submitted)}
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-sm font-semibold tabular-nums text-emerald-950">
                         {formatVersusParHandicap(Number(row.handicap))}

@@ -13,7 +13,12 @@ export const SKINS_SUBSTITUTES_TEAM_NAME = "Skins substitutes" as const;
 export const HANDICAP_HELPER_TEAM_NAME = "Handicap helper" as const;
 
 export function filterTeamStandingsRows<T extends { team_name: string }>(rows: T[]): T[] {
-  return rows.filter((r) => r.team_name !== SKINS_SUBSTITUTES_TEAM_NAME);
+  const hiddenTeamNames = new Set([
+    SKINS_SUBSTITUTES_TEAM_NAME.toLowerCase(),
+    HANDICAP_HELPER_TEAM_NAME.toLowerCase(),
+  ]);
+
+  return rows.filter((r) => !hiddenTeamNames.has(String(r.team_name).toLowerCase()));
 }
 
 /** User-facing label for `nhgl.season_phase` values from the API. */
