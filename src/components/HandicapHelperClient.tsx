@@ -57,6 +57,7 @@ export function HandicapHelperClient({
   const [par, setPar] = useState("36");
   const [submitStatus, setSubmitStatus] = useState<"idle" | "loading" | "ok" | "err">("idle");
   const [submitMessage, setSubmitMessage] = useState("");
+  const [addIntentConfirmOpen, setAddIntentConfirmOpen] = useState(false);
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
 
   const [addedPlayers, setAddedPlayers] = useState<PlayerOption[]>([]);
@@ -185,7 +186,7 @@ export function HandicapHelperClient({
 
   async function onSubmitScore(e: React.FormEvent) {
     e.preventDefault();
-    setConfirmSubmitOpen(true);
+    void submitScoreNow();
   }
 
   const sortedSummary = useMemo(
@@ -230,12 +231,56 @@ export function HandicapHelperClient({
             setConfirmSubmitOpen(false);
             setNewPlayerName("");
             setAddPlayerError("");
-            setAddOpen(true);
+            setAddIntentConfirmOpen(true);
           }}
         >
           Add score
         </button>
       </div>
+
+      {addIntentConfirmOpen ? (
+        <div
+          className="fixed inset-0 z-[110] flex items-end justify-center bg-black/45 p-4 sm:items-center"
+          role="presentation"
+          onMouseDown={(ev) => {
+            if (ev.target === ev.currentTarget) setAddIntentConfirmOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-sm border-2 border-amber-300/70 bg-[#faf8f0] p-4 shadow-[4px_5px_0_0_rgba(6,60,45,0.15)]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Submit destination confirmation"
+          >
+            <h2 className="text-base font-semibold text-amber-950">Did you mean to use Submit Round instead?</h2>
+            <p className="mt-1 text-sm text-amber-900/85">
+              Handicap Helper is for logging practice/history scores. Submit Round is for league-night scoring, points, and skins.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-emerald-900/35 bg-white px-3 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-50"
+                onClick={() => {
+                  setAddIntentConfirmOpen(false);
+                  router.push("/submit-round");
+                }}
+              >
+                Go to Submit Round
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-emerald-950 px-3 py-2 text-sm font-semibold text-[#f2efe4]"
+                onClick={() => {
+                  setAddIntentConfirmOpen(false);
+                  setAddOpen(true);
+                }}
+              >
+                Continue to Handicap Helper
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {addOpen ? (
         <div
@@ -266,45 +311,6 @@ export function HandicapHelperClient({
                 Close
               </button>
             </div>
-            {confirmSubmitOpen ? (
-              <div
-                className="mt-4 rounded-md border border-amber-300/70 bg-amber-50/80 p-3"
-                role="dialog"
-                aria-modal="false"
-                aria-label="Submit destination confirmation"
-              >
-                <p className="text-sm font-medium text-amber-950">
-                  Did you mean to use Submit Round instead?
-                </p>
-                <p className="mt-1 text-xs text-amber-900/80">
-                  Handicap Helper is for logging rounds only. Submit Round is used for league-night scoring, points, and skins.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md border border-emerald-900/35 bg-white px-3 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-50"
-                    onClick={() => {
-                      setConfirmSubmitOpen(false);
-                      setAddOpen(false);
-                      router.push("/submit-round");
-                    }}
-                  >
-                    Go to Submit Round
-                  </button>
-                  <button
-                    type="button"
-                    disabled={submitStatus === "loading"}
-                    className="rounded-md bg-emerald-950 px-3 py-2 text-sm font-semibold text-[#f2efe4] disabled:opacity-60"
-                    onClick={() => {
-                      setConfirmSubmitOpen(false);
-                      void submitScoreNow();
-                    }}
-                  >
-                    {submitStatus === "loading" ? "Saving…" : "Continue here"}
-                  </button>
-                </div>
-              </div>
-            ) : null}
             <form className="mt-4 space-y-4" onSubmit={onSubmitScore}>
               <label className="block text-sm font-medium text-emerald-950">
                 Player
@@ -400,10 +406,10 @@ export function HandicapHelperClient({
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
                   type="submit"
-                  disabled={submitStatus === "loading" || confirmSubmitOpen}
+                  disabled={submitStatus === "loading"}
                   className="rounded-md bg-emerald-950 px-4 py-2 text-sm font-semibold text-[#f2efe4] disabled:opacity-60"
                 >
-                  {submitStatus === "loading" ? "Saving…" : confirmSubmitOpen ? "Confirm above" : "Save score"}
+                  {submitStatus === "loading" ? "Saving…" : "Save score"}
                 </button>
                 <button
                   type="button"
