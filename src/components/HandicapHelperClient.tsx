@@ -10,6 +10,7 @@ export type HandicapSummaryRow = {
   handicap: number;
   rounds_in_avg: number;
   rounds_submitted: number;
+  is_league_member?: boolean | null;
 };
 
 type PlayerOption = { id: string; name: string };
@@ -192,6 +193,15 @@ export function HandicapHelperClient({
         return a.player_name.localeCompare(b.player_name, undefined, { sensitivity: "base" });
       }),
     [initialSummary],
+  );
+
+  const leagueMembersSummary = useMemo(
+    () => sortedSummary.filter((row) => row.is_league_member === true),
+    [sortedSummary],
+  );
+  const subsSummary = useMemo(
+    () => sortedSummary.filter((row) => row.is_league_member !== true),
+    [sortedSummary],
   );
 
   return (
@@ -456,7 +466,7 @@ export function HandicapHelperClient({
 
       <section className="space-y-2">
         <h2 className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-emerald-900/70">
-          League members using handicap helper
+          League members
         </h2>
         <div className={scorecardShell}>
           <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2 text-center">
@@ -465,9 +475,9 @@ export function HandicapHelperClient({
             </span>
           </div>
           <div className="overflow-x-auto">
-            {sortedSummary.length === 0 ? (
+            {leagueMembersSummary.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-emerald-900/70">
-                No scores yet. Use <strong>Add score</strong> to start tracking.
+                No league member scores yet.
               </p>
             ) : (
               <table className="w-full border-collapse text-sm">
@@ -498,7 +508,82 @@ export function HandicapHelperClient({
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedSummary.map((row, i) => (
+                  {leagueMembersSummary.map((row, i) => (
+                    <tr
+                      key={row.player_id}
+                      tabIndex={0}
+                      className={`cursor-pointer border-b border-emerald-900/15 last:border-b-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-700 ${
+                        i % 2 === 1 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"
+                      } hover:bg-emerald-100/50`}
+                      onClick={() => loadDetail(row)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          loadDetail(row);
+                        }
+                      }}
+                    >
+                      <td className="border-r border-emerald-900/15 px-3 py-2 font-medium text-emerald-950">
+                        {row.player_name}
+                      </td>
+                      <td className="border-r border-emerald-900/15 px-3 py-2 text-right font-mono text-sm tabular-nums text-emerald-900/90">
+                        {Number(row.rounds_submitted)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-sm font-semibold tabular-nums text-emerald-950">
+                        {formatVersusParHandicap(Number(row.handicap))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-emerald-900/70">
+          Subs
+        </h2>
+        <div className={scorecardShell}>
+          <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2 text-center">
+            <span className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-emerald-900/65">
+              9-hole handicap — 80% of avg strokes vs par (up to 5 rounds)
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            {subsSummary.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-emerald-900/70">No sub scores yet.</p>
+            ) : (
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b-2 border-emerald-900/25 bg-emerald-950 text-[#f2efe4]">
+                    <th
+                      scope="col"
+                      className="border-r border-emerald-700/50 px-3 py-2 text-left text-[0.65rem] font-bold uppercase tracking-wider"
+                    >
+                      Player
+                    </th>
+                    <th
+                      scope="col"
+                      className="min-w-[6.5rem] px-3 py-2 text-right text-[0.65rem] font-bold uppercase tracking-wider"
+                    >
+                      #
+                      <br />
+                      submitted
+                    </th>
+                    <th
+                      scope="col"
+                      className="min-w-[6.5rem] px-3 py-2 text-right text-[0.65rem] font-bold uppercase tracking-wider"
+                    >
+                      9-hole
+                      <br />
+                      handicap
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subsSummary.map((row, i) => (
                     <tr
                       key={row.player_id}
                       tabIndex={0}

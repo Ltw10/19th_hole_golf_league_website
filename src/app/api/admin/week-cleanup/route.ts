@@ -30,6 +30,29 @@ export async function POST(req: Request) {
 
   const admin = createAdminSupabaseClient();
 
+  const { error: e0 } = await admin.from("player_rounds").delete().eq("week_id", weekId);
+  if (e0) return NextResponse.json({ error: e0.message }, { status: 500 });
+
+  const { data: matchRows, error: mErr } = await admin.from("matches").select("id").eq("week_id", weekId);
+  if (mErr) return NextResponse.json({ error: mErr.message }, { status: 500 });
+  const matchIds = (matchRows ?? []).map((r) => r.id as string);
+  if (matchIds.length > 0) {
+    const { error: em } = await admin.from("match_scorecards").delete().in("match_id", matchIds);
+    if (em) return NextResponse.json({ error: em.message }, { status: 500 });
+  }
+
+  const { data: swRow, error: swErr } = await admin
+    .from("season_weeks")
+    .select("week_date")
+    .eq("id", weekId)
+    .maybeSingle();
+  if (swErr) return NextResponse.json({ error: swErr.message }, { status: 500 });
+  const ymd = swRow?.week_date as string | undefined;
+  if (ymd) {
+    const { error: hhErr } = await admin.from("handicap_helper_scores").delete().eq("played_date", ymd);
+    if (hhErr) return NextResponse.json({ error: hhErr.message }, { status: 500 });
+  }
+
   const { error: e1 } = await admin.from("score_submissions").delete().eq("week_id", weekId);
   if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
 

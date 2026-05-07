@@ -120,8 +120,17 @@ export function AdminScoresClient() {
   const [cleanupWeekId, setCleanupWeekId] = useState("");
   const [selectedHandicapPlayerId, setSelectedHandicapPlayerId] = useState<string | null>(null);
   const [editingHandicapRowId, setEditingHandicapRowId] = useState<string | null>(null);
+  const [deletingHandicapRowId, setDeletingHandicapRowId] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const [skinsBuyinDraft, setSkinsBuyinDraft] = useState("");
+  const [adminCourses, setAdminCourses] = useState<{ id: string; name: string }[]>([]);
+  const [adminCourseId, setAdminCourseId] = useState("");
+  type HoleDraft = { hole_number: number; par: string; stroke_index: string };
+  const [holeDrafts, setHoleDrafts] = useState<HoleDraft[]>([]);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savingHoles, setSavingHoles] = useState(false);
 
   const authHeader = useCallback(() => {
     return { Authorization: `Bearer ${secret}` };
@@ -138,6 +147,38 @@ export function AdminScoresClient() {
       setHandicapRows((json.handicap_scores as HandicapRow[] | undefined) ?? []);
       setPlayers((json.players as PlayerOption[] | undefined) ?? []);
       setWeeks((json.weeks as WeekOption[] | undefined) ?? []);
+
+      const [lsRes, courseRes] = await Promise.all([
+        fetch("/api/admin/league-settings", { headers: authHeader() }),
+        fetch("/api/admin/courses", { headers: authHeader() }),
+      ]);
+      const lsJson = await lsRes.json();
+      if (lsRes.ok && Array.isArray(lsJson.data)) {
+        const amt = (lsJson.data as { key: string; value: string }[]).find((x) => x.key === "skins_buyin_amount")
+          ?.value;
+        if (amt != null) setSkinsBuyinDraft(String(amt));
+      }
+      const cJson = await courseRes.json();
+      if (courseRes.ok && Array.isArray(cJson.courses)) {
+        const courses = cJson.courses as { id: string; name: string }[];
+        setAdminCourses(courses);
+        const pick =
+          courses.find((c) => c.name.toLowerCase().includes("hickory")) ?? courses[0] ?? null;
+        if (pick) {
+          setAdminCourseId(pick.id);
+          const hr = await fetch(`/api/admin/courses/${pick.id}`, { headers: authHeader() });
+          const hj = await hr.json();
+          if (hr.ok && Array.isArray(hj.holes)) {
+            setHoleDrafts(
+              (hj.holes as { hole_number: number; par: number; stroke_index: number }[]).map((h) => ({
+                hole_number: h.hole_number,
+                par: String(h.par),
+                stroke_index: String(h.stroke_index),
+              })),
+            );
+          }
+        }
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
       setRows(null);
@@ -148,6 +189,33 @@ export function AdminScoresClient() {
       setLoading(false);
     }
   }, [authHeader]);
+
+  async function removeHandicapRound(row: HandicapRow) {
+    if (
+      !confirm(
+        "Delete this handicap helper round? If it was submitted as a league round, the hole-by-hole scores for that match are removed too.",
+      )
+    ) {
+      return;
+    }
+    setDeletingHandicapRowId(row.id);
+    setErr("");
+    try {
+      const res = await fetch(`/api/admin/handicap-helper/${row.id}`, {
+        method: "DELETE",
+        headers: authHeader(),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErr(json.error ?? "Delete failed");
+        return;
+      }
+      setEditingHandicapRowId(null);
+      await load();
+    } finally {
+      setDeletingHandicapRowId(null);
+    }
+  }
 
   async function remove(id: string) {
     if (!confirm("Delete this submission?")) return;
@@ -241,6 +309,50 @@ export function AdminScoresClient() {
     }
   }
 
+  async function saveSkinsBuyin() {
+    setSavingSettings(true);
+    setErr("");
+    try {
+      const res = await fetch("/api/admin/league-settings", {
+        method: "PUT",
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ skins_buyin_amount: skinsBuyinDraft }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      alert("Skins buy-in amount saved.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
+  async function saveCourseHoles() {
+    if (!adminCourseId) return;
+    setSavingHoles(true);
+    setErr("");
+    try {
+      const holes = holeDrafts.map((h) => ({
+        hole_number: Number(h.hole_number),
+        par: Number(h.par),
+        stroke_index: Number(h.stroke_index),
+      }));
+      const res = await fetch(`/api/admin/courses/${encodeURIComponent(adminCourseId)}/holes`, {
+        method: "PUT",
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ holes }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? res.statusText);
+      alert("Course holes saved.");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setSavingHoles(false);
+    }
+  }
+
   async function cleanupTestWeek() {
     if (!cleanupWeekId) {
       setErr("Choose a week.");
@@ -248,7 +360,7 @@ export function AdminScoresClient() {
     }
     if (
       !confirm(
-        "Remove all score submissions for this week and delete the full skins bundle (hole wins, buy-ins, payouts, week row)? This cannot be undone.",
+        "Remove player rounds, scorecards, handicap helper rows for that league date, score submissions, and the full skins bundle for this week? This cannot be undone.",
       )
     ) {
       return;
@@ -310,11 +422,126 @@ export function AdminScoresClient() {
                 Set championship to top 2
               </button>
             </div>
+            <div className="rounded-md border border-zinc-200 bg-white/80 p-3 space-y-3">
+              <p className="text-sm font-medium text-zinc-900">Skins buy-in (each player)</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
+                  Amount ($)
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    className="w-32 rounded border border-zinc-300 px-2 py-1.5 text-sm"
+                    value={skinsBuyinDraft}
+                    onChange={(e) => setSkinsBuyinDraft(e.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={savingSettings || !secret}
+                  className="rounded-md bg-zinc-800 px-3 py-2 text-sm text-white disabled:opacity-50"
+                  onClick={() => void saveSkinsBuyin()}
+                >
+                  {savingSettings ? "Saving…" : "Save buy-in"}
+                </button>
+              </div>
+            </div>
+            <div className="rounded-md border border-zinc-200 bg-white/80 p-3 space-y-3">
+              <p className="text-sm font-medium text-zinc-900">Course holes</p>
+              <label className="block text-xs text-zinc-600">
+                Course
+                <select
+                  className="mt-1 block w-full max-w-md rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+                  value={adminCourseId}
+                  onChange={async (e) => {
+                    const id = e.target.value;
+                    setAdminCourseId(id);
+                    const hr = await fetch(`/api/admin/courses/${encodeURIComponent(id)}`, {
+                      headers: authHeader(),
+                    });
+                    const hj = await hr.json();
+                    if (hr.ok && Array.isArray(hj.holes)) {
+                      setHoleDrafts(
+                        (hj.holes as { hole_number: number; par: number; stroke_index: number }[]).map((h) => ({
+                          hole_number: h.hole_number,
+                          par: String(h.par),
+                          stroke_index: String(h.stroke_index),
+                        })),
+                      );
+                    }
+                  }}
+                >
+                  {adminCourses.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {holeDrafts.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[320px] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium text-zinc-700">
+                        <th className="px-2 py-1">Hole</th>
+                        <th className="px-2 py-1">Par</th>
+                        <th className="px-2 py-1">Stroke idx</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {holeDrafts.map((h, idx) => (
+                        <tr key={h.hole_number} className="border-b border-zinc-100">
+                          <td className="px-2 py-1 font-mono">{h.hole_number}</td>
+                          <td className="px-2 py-1">
+                            <input
+                              type="number"
+                              min={3}
+                              max={6}
+                              className="w-16 rounded border border-zinc-300 px-1 py-0.5"
+                              value={h.par}
+                              onChange={(e) => {
+                                const next = [...holeDrafts];
+                                next[idx] = { ...next[idx]!, par: e.target.value };
+                                setHoleDrafts(next);
+                              }}
+                            />
+                          </td>
+                          <td className="px-2 py-1">
+                            <input
+                              type="number"
+                              min={1}
+                              max={18}
+                              className="w-16 rounded border border-zinc-300 px-1 py-0.5"
+                              value={h.stroke_index}
+                              onChange={(e) => {
+                                const next = [...holeDrafts];
+                                next[idx] = { ...next[idx]!, stroke_index: e.target.value };
+                                setHoleDrafts(next);
+                              }}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-500">Load submissions first to fetch course data.</p>
+              )}
+              <button
+                type="button"
+                disabled={savingHoles || !secret || !adminCourseId || holeDrafts.length === 0}
+                className="rounded-md bg-emerald-800 px-3 py-2 text-sm text-white disabled:opacity-50"
+                onClick={() => void saveCourseHoles()}
+              >
+                {savingHoles ? "Saving…" : "Save course holes"}
+              </button>
+            </div>
             <div className="rounded-md border border-zinc-200 bg-white/80 p-3">
               <p className="text-sm font-medium text-zinc-900">Test cleanup (scores + skins for one week)</p>
               <p className="mt-1 text-xs text-zinc-600">
-                Clears match score rows and the skins submission for the chosen week so you can resubmit. Does not
-                delete scorecard image files in Storage.
+                Clears per-player rounds (hole scores), matchup scorecards, handicap helper rows for that Tuesday&apos;s
+                date, match score rows, and the skins submission for the chosen week. Does not delete scorecard image
+                files in Storage.
               </p>
               <div className="mt-2 flex flex-wrap items-end gap-2">
                 <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
@@ -447,6 +674,9 @@ export function AdminScoresClient() {
                           <HandicapScoreEditor
                             row={r}
                             players={players}
+                            deleteBusy={deletingHandicapRowId !== null}
+                            isDeleting={deletingHandicapRowId === r.id}
+                            onDelete={() => void removeHandicapRound(r)}
                             onCancel={() => setEditingHandicapRowId(null)}
                             onError={setErr}
                             onSave={async (draft) => {
@@ -481,13 +711,24 @@ export function AdminScoresClient() {
                                 Vs par {formatVersusParHandicap(r.score - r.par)}
                               </span>
                             </div>
-                            <button
-                              type="button"
-                              className="rounded border border-emerald-700 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-900 hover:bg-emerald-100"
-                              onClick={() => setEditingHandicapRowId(r.id)}
-                            >
-                              Edit
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                className="rounded border border-emerald-700 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                                disabled={deletingHandicapRowId !== null}
+                                onClick={() => setEditingHandicapRowId(r.id)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded border border-red-300 bg-red-50 px-3 py-1 text-sm font-medium text-red-900 hover:bg-red-100 disabled:opacity-50"
+                                disabled={deletingHandicapRowId !== null}
+                                onClick={() => void removeHandicapRound(r)}
+                              >
+                                {deletingHandicapRowId === r.id ? "Deleting…" : "Delete"}
+                              </button>
+                            </div>
                           </div>
                         )}
                       </li>
@@ -538,7 +779,8 @@ export function AdminScoresClient() {
                             row={r}
                             authHeader={authHeader}
                             onSave={async (draft) => {
-                              if (draft.team_a_points + draft.team_b_points !== 10) {
+                              const sum = Number(draft.team_a_points) + Number(draft.team_b_points);
+                              if (Math.abs(sum - 10) > 0.001) {
                                 setErr("Points must sum to 10.");
                                 return;
                               }
@@ -587,13 +829,19 @@ function HandicapScoreEditor({
   players,
   onSave,
   onCancel,
+  onDelete,
   onError,
+  deleteBusy,
+  isDeleting,
 }: {
   row: HandicapRow;
   players: PlayerOption[];
   onSave: (row: HandicapRow) => Promise<void>;
   onCancel: () => void;
+  onDelete: () => void;
   onError: (msg: string) => void;
+  deleteBusy: boolean;
+  isDeleting: boolean;
 }) {
   const [draft, setDraft] = useState(row);
   const [saving, setSaving] = useState(false);
@@ -658,17 +906,26 @@ function HandicapScoreEditor({
             onChange={(e) => setDraft({ ...draft, par: Number(e.target.value) })}
           />
         </label>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className="rounded border border-zinc-300 px-3 py-1.5 text-zinc-700"
+            className="rounded border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-900 hover:bg-red-100 disabled:opacity-50"
+            disabled={deleteBusy || saving}
+            onClick={onDelete}
+          >
+            {isDeleting ? "Deleting…" : "Delete round"}
+          </button>
+          <button
+            type="button"
+            className="rounded border border-zinc-300 px-3 py-1.5 text-zinc-700 disabled:opacity-50"
+            disabled={deleteBusy}
             onClick={onCancel}
           >
             Cancel
           </button>
           <button
             type="button"
-            disabled={saving || !hasChanges}
+            disabled={saving || !hasChanges || deleteBusy}
             className="rounded bg-emerald-800 px-3 py-1.5 text-white disabled:opacity-50"
             onClick={async () => {
               onError("");

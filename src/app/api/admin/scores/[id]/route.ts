@@ -26,12 +26,11 @@ export async function PATCH(req: Request, { params }: Params) {
     submitter_label: string | null;
   }>;
 
-  if (
-    body.team_a_points != null &&
-    body.team_b_points != null &&
-    body.team_a_points + body.team_b_points !== 10
-  ) {
-    return NextResponse.json({ error: "Points must sum to 10." }, { status: 400 });
+  if (body.team_a_points != null && body.team_b_points != null) {
+    const sum = Number(body.team_a_points) + Number(body.team_b_points);
+    if (Math.abs(sum - 10) > 0.001) {
+      return NextResponse.json({ error: "Points must sum to 10." }, { status: 400 });
+    }
   }
 
   const admin = createAdminSupabaseClient();

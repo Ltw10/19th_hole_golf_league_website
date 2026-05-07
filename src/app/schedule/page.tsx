@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { SkinsWeekDetailButton, type SkinsWeekDetail } from "@/components/SkinsWeekDetailButton";
 import { SupabaseConnectionHelp } from "@/components/SupabaseConnectionHelp";
 import { formatSeasonPhase } from "@/lib/nhgl";
+import { formatPointsDisplay, handicapFromScores, strokesReceivedOnHole } from "@/lib/scoring";
 import { currentScheduleWeekId } from "@/lib/schedule";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -22,14 +24,52 @@ type Match = {
 
 type ScoreRow = {
   match_id: string;
-  team_a_points: number;
-  team_b_points: number;
+  team_a_points: number | string;
+  team_b_points: number | string;
   scorecard_image_url: string | null;
 };
 
-/** Fixed middle/right column widths so each row’s grid matches (auto-sized cols misalign header vs body). */
+/** Match | Pts | Players in | Card */
 const MATCH_TABLE_GRID =
-  "grid w-full grid-cols-[minmax(0,1fr)_3.5rem_7rem] sm:grid-cols-[minmax(0,1fr)_4.5rem_7.5rem]";
+  "grid w-full grid-cols-[minmax(0,1fr)_3.25rem_4rem_8.5rem] sm:grid-cols-[minmax(0,1fr)_4rem_4.5rem_10.5rem]";
+
+const scorecardShell =
+  "overflow-hidden rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]";
+
+type SkinAgg = {
+  player_id: string;
+  player_name: string;
+  holes: number[];
+  amount_won: number;
+};
+
+type SkinsRoundRow = {
+  id: string;
+  match_id: string;
+  week_id: string;
+  player_id: string;
+  played_skins: boolean;
+  which_nine: "front" | "back" | null;
+};
+
+type HoleScoreRow = {
+  player_round_id: string;
+  hole_number: number;
+  strokes: number;
+};
+
+type HandicapScoreRow = {
+  player_id: string;
+  played_date: string;
+  score: number;
+  par: number;
+  created_at: string;
+};
+
+type CourseHoleRow = {
+  hole_number: number;
+  stroke_index: number;
+};
 
 export default async function SchedulePage() {
   let loadError: string | null = null;
@@ -40,6 +80,11 @@ export default async function SchedulePage() {
     string,
     { a: number; b: number; scorecardImageUrl: string | null }
   >();
+  let submissionCountByMatch = new Map<string, number>();
+  let skinsByWeek = new Map<string, SkinAgg[]>();
+  let skinsPotByWeek = new Map<string, number>();
+  let skinsDetailByWeek = new Map<string, SkinsWeekDetail>();
+  let skinsBuyinAmount = 5;
 
   try {
     const supabase = await createServerSupabaseClient();
@@ -49,6 +94,12 @@ export default async function SchedulePage() {
       { data: m, error: mErr },
       { data: t, error: tErr },
       { data: subs, error: sErr },
+      { data: rounds, error: rErr },
+      { data: holeWins, error: hwErr },
+      { data: payouts, error: pyErr },
+      { data: playersRows, error: pErr },
+      { data: settingsRows, error: setErr },
+      { data: buyins, error: biErr },
     ] = await Promise.all([
       supabase.from("season_weeks").select("*").order("week_number", { ascending: true }),
       supabase.from("matches").select("*"),
@@ -56,20 +107,216 @@ export default async function SchedulePage() {
       supabase
         .from("score_submissions")
         .select("match_id, team_a_points, team_b_points, scorecard_image_url"),
+      supabase.from("player_rounds").select("id, match_id, week_id, player_id, played_skins, which_nine"),
+      supabase.from("skins_hole_wins").select("week_id, player_id, hole"),
+      supabase.from("skins_week_payouts").select("week_id, player_id, amount_won"),
+      supabase.from("players").select("id, name"),
+      supabase.from("league_settings").select("key, value"),
+      supabase.from("skins_buyins").select("week_id, player_id"),
     ]);
 
-    if (wErr || mErr || tErr || sErr) {
-      loadError =
-        wErr?.message ?? mErr?.message ?? tErr?.message ?? sErr?.message ?? "Unknown error";
+    const firstErr =
+      wErr ??
+      mErr ??
+      tErr ??
+      sErr ??
+      rErr ??
+      hwErr ??
+      pyErr ??
+      pErr ??
+      setErr ??
+      biErr;
+    if (firstErr) {
+      loadError = firstErr.message;
     } else {
       weeks = (w ?? []) as Week[];
       matches = (m ?? []) as Match[];
       teams = (t ?? []) as Team[];
       for (const row of (subs ?? []) as ScoreRow[]) {
         scoresByMatchId.set(row.match_id, {
-          a: row.team_a_points,
-          b: row.team_b_points,
+          a: Number(row.team_a_points),
+          b: Number(row.team_b_points),
           scorecardImageUrl: row.scorecard_image_url,
+        });
+      }
+      for (const row of rounds ?? []) {
+        const mid = (row as { match_id: string }).match_id as string;
+        submissionCountByMatch.set(mid, (submissionCountByMatch.get(mid) ?? 0) + 1);
+      }
+
+      for (const row of settingsRows ?? []) {
+        if (row.key === "skins_buyin_amount") {
+          const n = Number(String(row.value).replace(/,/g, ""));
+          if (Number.isFinite(n)) skinsBuyinAmount = n;
+        }
+      }
+
+      const playerName = new Map((playersRows ?? []).map((p) => [p.id as string, p.name as string]));
+      const roundRows = (rounds ?? []) as SkinsRoundRow[];
+      const skinsRounds = roundRows.filter((r) => r.played_skins);
+      const skinsRoundIds = skinsRounds.map((r) => r.id);
+      const skinsPlayerIds = [...new Set(skinsRounds.map((r) => r.player_id))];
+
+      const { data: holeScoresRows, error: hsErr } =
+        skinsRoundIds.length === 0
+          ? { data: [] as HoleScoreRow[], error: null }
+          : await supabase
+              .from("player_hole_scores")
+              .select("player_round_id, hole_number, strokes")
+              .in("player_round_id", skinsRoundIds);
+      if (hsErr) {
+        loadError = hsErr.message;
+      }
+
+      const { data: hhRows, error: hhErr } =
+        skinsPlayerIds.length === 0
+          ? { data: [] as HandicapScoreRow[], error: null }
+          : await supabase
+              .from("handicap_helper_scores")
+              .select("player_id, played_date, score, par, created_at")
+              .in("player_id", skinsPlayerIds)
+              .order("played_date", { ascending: false });
+      if (hhErr) {
+        loadError = hhErr.message;
+      }
+
+      const { data: courseRows, error: chErr } = await supabase.from("course_holes").select("hole_number, stroke_index");
+      if (chErr) {
+        loadError = chErr.message;
+      }
+
+      const hhByPlayer: Record<string, HandicapScoreRow[]> = {};
+      for (const row of (hhRows ?? []) as HandicapScoreRow[]) {
+        const pid = row.player_id as string;
+        const list = hhByPlayer[pid] ?? [];
+        list.push(row);
+        hhByPlayer[pid] = list;
+      }
+
+      const weekDateById = new Map(weeks.map((wk) => [wk.id, wk.week_date]));
+      const courseByHole = new Map<number, CourseHoleRow>();
+      for (const ch of (courseRows ?? []) as CourseHoleRow[]) {
+        courseByHole.set(ch.hole_number, ch);
+      }
+
+      const handicapByRoundId = new Map<string, number>();
+      for (const rr of skinsRounds) {
+        const rows = hhByPlayer[rr.player_id] ?? [];
+        handicapByRoundId.set(
+          rr.id,
+          handicapFromScores(
+            rows.map((x) => ({
+              played_date: x.played_date,
+              score: Number(x.score),
+              par: Number(x.par),
+              created_at: x.created_at,
+            })),
+            weekDateById.get(rr.week_id),
+          ),
+        );
+      }
+
+      const roundById = new Map(skinsRounds.map((r) => [r.id, r]));
+      const scoresByWeekHole = new Map<string, Array<{ player_id: string; net: number }>>();
+      for (const hs of (holeScoresRows ?? []) as HoleScoreRow[]) {
+        const rr = roundById.get(hs.player_round_id);
+        if (!rr) continue;
+        const sideHoles = (rr.which_nine ?? "front") === "back" ? [10, 11, 12, 13, 14, 15, 16, 17, 18] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        const sideCourse = sideHoles
+          .map((h) => courseByHole.get(h))
+          .filter((h): h is CourseHoleRow => Boolean(h))
+          .map((h) => ({ hole_number: h.hole_number, par: 4, stroke_index: h.stroke_index }));
+        const hcap = handicapByRoundId.get(rr.id) ?? 0;
+        const dots = strokesReceivedOnHole(sideCourse, hcap, hs.hole_number);
+        const net = hs.strokes - dots;
+        const key = `${rr.week_id}:${hs.hole_number}`;
+        const list = scoresByWeekHole.get(key) ?? [];
+        list.push({ player_id: rr.player_id, net });
+        scoresByWeekHole.set(key, list);
+      }
+
+      const skinsRoundsByWeek = new Map<string, SkinsRoundRow[]>();
+      for (const rr of skinsRounds) {
+        const list = skinsRoundsByWeek.get(rr.week_id) ?? [];
+        list.push(rr);
+        skinsRoundsByWeek.set(rr.week_id, list);
+      }
+
+      const holesByWeekPlayer = new Map<string, Map<string, number[]>>();
+      for (const row of holeWins ?? []) {
+        const wid = row.week_id as string;
+        const pid = row.player_id as string;
+        const hole = Number(row.hole);
+        const weekMap = holesByWeekPlayer.get(wid) ?? new Map<string, number[]>();
+        const arr = weekMap.get(pid) ?? [];
+        arr.push(hole);
+        weekMap.set(pid, arr);
+        holesByWeekPlayer.set(wid, weekMap);
+      }
+
+      const payoutByWeekPlayer = new Map<string, Map<string, number>>();
+      for (const row of payouts ?? []) {
+        const wid = row.week_id as string;
+        const pid = row.player_id as string;
+        const amt = Number(row.amount_won);
+        const wm = payoutByWeekPlayer.get(wid) ?? new Map<string, number>();
+        wm.set(pid, amt);
+        payoutByWeekPlayer.set(wid, wm);
+      }
+
+      for (const [wid, pmap] of holesByWeekPlayer) {
+        const rows: SkinAgg[] = [];
+        for (const [pid, holes] of pmap) {
+          holes.sort((x, y) => x - y);
+          const amount_won = payoutByWeekPlayer.get(wid)?.get(pid) ?? 0;
+          rows.push({
+            player_id: pid,
+            player_name: playerName.get(pid) ?? "?",
+            holes,
+            amount_won,
+          });
+        }
+        rows.sort((a, b) => {
+          if (b.holes.length !== a.holes.length) return b.holes.length - a.holes.length;
+          if (b.amount_won !== a.amount_won) return b.amount_won - a.amount_won;
+          return a.player_name.localeCompare(b.player_name);
+        });
+        skinsByWeek.set(wid, rows);
+      }
+
+      const buyerCountByWeek = new Map<string, number>();
+      for (const row of buyins ?? []) {
+        const wid = row.week_id as string;
+        buyerCountByWeek.set(wid, (buyerCountByWeek.get(wid) ?? 0) + 1);
+      }
+      for (const [wid, n] of buyerCountByWeek) {
+        skinsPotByWeek.set(wid, skinsBuyinAmount * n);
+      }
+
+      for (const wk of weeks) {
+        if (!skinsByWeek.has(wk.id)) skinsByWeek.set(wk.id, []);
+        if (!skinsPotByWeek.has(wk.id)) skinsPotByWeek.set(wk.id, 0);
+        const roundsInWeek = skinsRoundsByWeek.get(wk.id) ?? [];
+        const whichNine = (roundsInWeek[0]?.which_nine ?? "front") as "front" | "back";
+        const holes = whichNine === "back" ? [10, 11, 12, 13, 14, 15, 16, 17, 18] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        const holesDetail = holes.map((hole) => {
+          const scores = scoresByWeekHole.get(`${wk.id}:${hole}`) ?? [];
+          if (scores.length === 0) {
+            return { hole, lowestNet: null, players: [], result: "none" as const };
+          }
+          const lowestNet = Math.min(...scores.map((s) => s.net));
+          const winners = scores.filter((s) => s.net === lowestNet).map((s) => playerName.get(s.player_id) ?? "?");
+          return {
+            hole,
+            lowestNet,
+            players: winners,
+            result: winners.length === 1 ? ("skin" as const) : ("tie" as const),
+          };
+        });
+        skinsDetailByWeek.set(wk.id, {
+          whichNine,
+          playerCount: new Set(roundsInWeek.map((r) => r.player_id)).size,
+          holes: holesDetail,
         });
       }
     }
@@ -109,6 +356,8 @@ export default async function SchedulePage() {
         <ul className="space-y-7">
           {weeks.map((w) => {
             const ms = byWeek.get(w.id) ?? [];
+            const skinRows = skinsByWeek.get(w.id) ?? [];
+            const pot = skinsPotByWeek.get(w.id) ?? 0;
             return (
               <li
                 key={w.id}
@@ -156,6 +405,9 @@ export default async function SchedulePage() {
                       <li className="flex items-center justify-center border-r border-emerald-900/15 py-1.5 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:text-[0.65rem] sm:tracking-[0.14em]">
                         Pts
                       </li>
+                      <li className="flex items-center justify-center border-r border-emerald-900/15 py-1.5 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:text-[0.65rem] sm:tracking-[0.14em]">
+                        In
+                      </li>
                       <li className="flex min-w-0 items-center justify-center py-1.5 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:text-[0.65rem] sm:tracking-[0.14em]">
                         Card
                       </li>
@@ -163,6 +415,7 @@ export default async function SchedulePage() {
                     <ul>
                       {ms.map((m, idx) => {
                         const submitted = scoresByMatchId.get(m.id);
+                        const n = submissionCountByMatch.get(m.id) ?? 0;
                         return (
                           <li
                             key={m.id}
@@ -175,19 +428,42 @@ export default async function SchedulePage() {
                             </span>
                             <div className="flex items-center justify-center border-r border-emerald-900/15 sm:px-2 sm:py-2.5">
                               {submitted ? (
-                                <span className="font-mono text-sm font-semibold tabular-nums text-emerald-950 sm:text-base">
-                                  {submitted.a}
-                                  <span className="mx-0.5 font-normal text-emerald-800/45 sm:mx-1">·</span>
-                                  {submitted.b}
+                                <span className="font-mono text-xs font-semibold tabular-nums text-emerald-950 sm:text-sm">
+                                  {formatPointsDisplay(submitted.a, submitted.b)}
                                 </span>
                               ) : (
                                 <span className="font-mono text-sm text-emerald-800/35 sm:text-base">—</span>
                               )}
                             </div>
+                            <div className="flex items-center justify-center border-r border-emerald-900/15 sm:px-1 sm:py-2.5">
+                              {m.team_a_id && m.team_b_id ? (
+                                <span
+                                  className={`rounded-sm px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums sm:text-xs ${
+                                    n >= 4
+                                      ? "bg-emerald-100 text-emerald-950"
+                                      : n > 0
+                                        ? "bg-amber-100 text-amber-950"
+                                        : "bg-zinc-100 text-zinc-600"
+                                  }`}
+                                >
+                                  {n}/4
+                                </span>
+                              ) : (
+                                <span className="text-zinc-400">—</span>
+                              )}
+                            </div>
                             <div className="flex min-w-0 items-center justify-center sm:px-3 sm:py-2">
                               {m.team_a_id && m.team_b_id ? (
-                                submitted ? (
-                                  submitted.scorecardImageUrl ? (
+                                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                                  {submitted || highlightedWeekId === w.id || n > 0 ? (
+                                    <Link
+                                      href={`/schedule/virtual-scorecard/${encodeURIComponent(m.id)}`}
+                                      className="shrink-0 whitespace-nowrap rounded-sm border border-emerald-800/25 bg-white px-2 py-1 text-xs font-medium text-emerald-900 shadow-sm hover:bg-[#f4f1e8] sm:px-2.5"
+                                    >
+                                      View virtual
+                                    </Link>
+                                  ) : null}
+                                  {submitted?.scorecardImageUrl ? (
                                     <a
                                       href={submitted.scorecardImageUrl}
                                       target="_blank"
@@ -196,19 +472,16 @@ export default async function SchedulePage() {
                                     >
                                       View card
                                     </a>
-                                  ) : (
-                                    <span className="whitespace-nowrap rounded-sm border border-emerald-900/20 bg-[#eef3e8] px-2 py-1 text-[0.6rem] font-semibold uppercase tracking-wide text-emerald-900/80 sm:px-2.5 sm:text-[0.65rem]">
-                                      Submitted
-                                    </span>
-                                  )
-                                ) : (
-                                  <Link
-                                    href={`/submit-scores?match=${encodeURIComponent(m.id)}`}
-                                    className="shrink-0 rounded-sm border-2 border-emerald-800/40 bg-emerald-900 px-2 py-1.5 text-[0.65rem] font-semibold leading-none text-[#f5f2e8] shadow-sm hover:bg-emerald-950 sm:px-2.5 sm:py-1 sm:text-xs"
-                                  >
-                                    Enter
-                                  </Link>
-                                )
+                                  ) : null}
+                                  {!submitted ? (
+                                    <Link
+                                      href={`/submit-round?match=${encodeURIComponent(m.id)}`}
+                                      className="shrink-0 rounded-sm border-2 border-emerald-800/40 bg-emerald-900 px-2 py-1.5 text-[0.65rem] font-semibold leading-none text-[#f5f2e8] shadow-sm hover:bg-emerald-950 sm:px-2.5 sm:py-1 sm:text-xs"
+                                    >
+                                      Enter
+                                    </Link>
+                                  ) : null}
+                                </div>
                               ) : null}
                             </div>
                           </li>
@@ -217,6 +490,75 @@ export default async function SchedulePage() {
                     </ul>
                   </div>
                 )}
+                <div className={`${scorecardShell} border-t-0`}>
+                  <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2 text-center">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-emerald-900/65">
+                        Skins · Week {w.week_number}
+                      </span>
+                      <SkinsWeekDetailButton
+                        weekLabel={`Week ${w.week_number} (${w.week_date})`}
+                        detail={skinsDetailByWeek.get(w.id) ?? null}
+                      />
+                    </div>
+                  </div>
+                  <div className="px-3 py-2 text-xs text-emerald-900/80">
+                    Pot:{" "}
+                    <span className="font-mono font-semibold tabular-nums">
+                      ${pot.toFixed(2)}
+                    </span>{" "}
+                    <span className="text-emerald-800/60">(${skinsBuyinAmount.toFixed(2)} × buyers)</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    {skinRows.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-sm text-emerald-900/65">
+                        No skins yet — players haven&apos;t submitted, or no one bought in for this week.
+                      </p>
+                    ) : (
+                      <table className="w-full border-collapse text-sm">
+                        <thead>
+                          <tr className="border-b-2 border-emerald-900/25 bg-emerald-950 text-[#f2efe4]">
+                            <th className="border-r border-emerald-700/50 px-3 py-2 text-left text-[0.65rem] font-bold uppercase tracking-wider">
+                              Player
+                            </th>
+                            <th className="border-r border-emerald-700/50 px-3 py-2 text-left text-[0.65rem] font-bold uppercase tracking-wider">
+                              Holes won
+                            </th>
+                            <th className="w-14 border-r border-emerald-700/50 px-2 py-2 text-center text-[0.65rem] font-bold uppercase tracking-wider">
+                              Skins
+                            </th>
+                            <th className="w-20 px-3 py-2 text-right text-[0.65rem] font-bold uppercase tracking-wider">
+                              $ won
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {skinRows.map((row, i) => (
+                            <tr
+                              key={row.player_id}
+                              className={`border-b border-emerald-900/15 last:border-b-0 ${
+                                i % 2 === 1 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"
+                              }`}
+                            >
+                              <td className="border-r border-emerald-900/15 px-3 py-2 font-medium text-emerald-950">
+                                {row.player_name}
+                              </td>
+                              <td className="border-r border-emerald-900/15 px-3 py-2 font-mono text-xs tabular-nums text-emerald-900/90">
+                                {row.holes.join(", ")}
+                              </td>
+                              <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono tabular-nums text-emerald-900">
+                                {row.holes.length}
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono tabular-nums text-emerald-950">
+                                {row.amount_won.toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
               </li>
             );
           })}

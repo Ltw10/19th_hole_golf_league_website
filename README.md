@@ -35,8 +35,9 @@ Next.js app for schedule, regular-season standings, public score and skins entry
 
 - **Schedule** — seeded weeks (handicap → regular → championship) and 45 regular-season matches (round-robin × 3) plus a placeholder championship match on week 19.
 - **Standings** — team points from `nhgl.v_regular_season_team_points`; skins from `nhgl.v_skins_player_stats`.
-- **Submit scores** — public insert into `nhgl.score_submissions` with optional scorecard upload to Storage bucket **`nhgl-scorecards`**.
-- **Submit skins** — atomic `nhgl.submit_skins_week` RPC (hole wins, buy-ins, payouts).
+- **Submit round** — unified hole-by-hole scores via `nhgl.submit_player_round` (handicap row, skins recompute, matchup points when 4/4 players submitted; optional scorecard becomes the matchup card).
+- **Submit scores** _(deprecated)_ — public insert into `nhgl.score_submissions` with optional scorecard upload to Storage bucket **`nhgl-scorecards`**.
+- **Submit skins** _(deprecated)_ — atomic `nhgl.submit_skins_week` RPC (hole wins, buy-ins, payouts).
 - **Admin** — `/admin/scores`: list / edit / delete submissions via service role; button to set the week 19 championship match to the top two teams by regular-season points.
 
 ## League data

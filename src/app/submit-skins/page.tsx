@@ -34,6 +34,19 @@ export default async function SubmitSkinsPage() {
 
   return (
     <div className="min-w-0 space-y-6">
+      <div
+        className="rounded-lg border border-amber-800/30 bg-amber-50/90 px-4 py-3 text-sm text-amber-950"
+        role="status"
+      >
+        <p className="font-semibold">Deprecated</p>
+        <p className="mt-1 text-amber-950/90">
+          Use the unified{" "}
+          <a href="/submit-round" className="font-medium underline underline-offset-2 hover:text-amber-900">
+            Submit round
+          </a>{" "}
+          form instead. This page remains available as a manual fallback.
+        </p>
+      </div>
       <div>
         <h1 className="text-xl font-semibold text-emerald-950 sm:text-2xl">Submit Skins</h1>
         <p className="mt-1 text-sm text-zinc-600 sm:text-base">

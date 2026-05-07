@@ -3,31 +3,30 @@ import Link from "next/link";
 
 const links = [
   {
+    href: "/submit-round",
+    title: "Submit round",
+    description: "Hole-by-hole scores, skins opt-in, optional scorecard — one form",
+    tone: "primary" as const,
+  },
+  {
     href: "/schedule",
     title: "Schedule",
     description: "Week-by-week matchups",
+    tone: "default" as const,
   },
   {
     href: "/standings",
     title: "Standings",
     description: "Team points and skins leaders",
+    tone: "default" as const,
   },
   {
     href: "/handicap-helper",
     title: "Handicap helper",
     description: "Log rounds and track average strokes vs par",
+    tone: "default" as const,
   },
-  {
-    href: "/submit-scores",
-    title: "Submit scores",
-    description: "Match points and scorecard photo",
-  },
-  {
-    href: "/submit-skins",
-    title: "Submit skins",
-    description: "Hole winners, buy-ins, payouts",
-  },
-] as const;
+];
 
 export default function Home() {
   return (
@@ -73,8 +72,8 @@ export default function Home() {
               19th Hole Golf League @ Hickory Sticks
             </h1>
             <p className="text-base leading-relaxed text-zinc-700 sm:text-lg">
-              View the schedule and standings, submit match scores and scorecards, and enter weekly skins
-              results — all in one place.
+              View the schedule and standings, submit your round once for handicaps, skins, and team points — all in one
+              place.
             </p>
           </div>
         </div>
@@ -92,25 +91,31 @@ export default function Home() {
         </div>
 
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
-          {links.map((item) => (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                className="group flex min-h-[3.5rem] h-full flex-col rounded-2xl border border-emerald-900/10 bg-white/90 p-5 shadow-sm ring-1 ring-black/[0.03] transition duration-200 active:bg-zinc-50 hover:-translate-y-0.5 hover:border-amber-300/60 hover:shadow-md motion-reduce:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600/70 sm:p-6"
-              >
-                <span className="font-semibold text-emerald-950 transition group-hover:text-emerald-900">
-                  {item.title}
-                </span>
-                <span className="mt-1.5 text-sm leading-snug text-zinc-600">{item.description}</span>
-                <span className="mt-3 inline-flex items-center text-sm font-medium text-amber-900/75 sm:mt-4">
-                  Continue
-                  <span className="ml-1 transition group-hover:translate-x-0.5 motion-reduce:transform-none">
-                    →
+          {links.map((item) => {
+            const linkClass =
+              item.tone === "primary"
+                ? "border-emerald-800/30 bg-[#f4faf6] ring-emerald-900/10 hover:border-emerald-700/50"
+                : "border-emerald-900/10 bg-white/90 hover:border-amber-300/60";
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={`group flex min-h-[3.5rem] h-full flex-col rounded-2xl border p-5 shadow-sm ring-1 ring-black/[0.03] transition duration-200 active:bg-zinc-50 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600/70 sm:p-6 ${linkClass}`}
+                >
+                  <span className="font-semibold text-emerald-950 transition group-hover:text-emerald-900">
+                    {item.title}
                   </span>
-                </span>
-              </Link>
-            </li>
-          ))}
+                  <span className="mt-1.5 text-sm leading-snug text-zinc-600">{item.description}</span>
+                  <span className="mt-3 inline-flex items-center text-sm font-medium text-amber-900/75 sm:mt-4">
+                    Continue
+                    <span className="ml-1 transition group-hover:translate-x-0.5 motion-reduce:transform-none">
+                      →
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       </section>
     </div>

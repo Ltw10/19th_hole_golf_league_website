@@ -9,8 +9,7 @@ const links = [
   { href: "/schedule", label: "Schedule" },
   { href: "/standings", label: "Standings" },
   { href: "/handicap-helper", label: "Handicap Helper" },
-  { href: "/submit-scores", label: "Submit Scores" },
-  { href: "/submit-skins", label: "Submit Skins" },
+  { href: "/submit-round", label: "Submit Round" },
   { href: "/admin/scores", label: "Admin" },
 ] as const;
 
