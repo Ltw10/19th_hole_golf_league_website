@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BackToScheduleButton } from "@/components/BackToScheduleButton";
 import { VirtualDotsPreview } from "@/components/VirtualDotsPreview";
 import { handicapFromScores, strokesReceivedOnHole } from "@/lib/scoring";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -125,6 +125,8 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
   const teamBId = typedMatch.team_b_id ?? "";
   const rowsA = roundRows.filter((r) => r.played_for_team_id === teamAId);
   const rowsB = roundRows.filter((r) => r.played_for_team_id === teamBId);
+  const submittedCount = roundRows.length;
+  const showComputedSections = submittedCount >= 4;
   const playerIds = [...new Set(roundRows.map((r) => r.player_id))];
 
   if (roundRows.length === 0) {
@@ -194,7 +196,23 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
         const team = dotsA === dotsB ? null : dotsA > dotsB ? teamLabelA : teamLabelB;
         return { hole, diff, team };
       });
-      return { sideHoles, strokeIndexByHole, perHole };
+      const players = preview
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          team: p.team_id === teamAId ? teamLabelA : teamLabelB,
+          teamSort: p.team_id === teamAId ? 0 : 1,
+          handicap: p.handicap,
+          dotsByHole: Object.fromEntries(
+            sideHoles.map((hole) => [hole, strokesReceivedOnHole(sideCourse, p.handicap, hole)]),
+          ),
+        }))
+        .sort((a, b) => {
+          if (a.teamSort !== b.teamSort) return a.teamSort - b.teamSort;
+          return a.name.localeCompare(b.name);
+        })
+        .map(({ teamSort: _teamSort, ...rest }) => rest);
+      return { sideHoles, strokeIndexByHole, perHole, players };
     }
 
     const front = netDotsForSide("front");
@@ -202,9 +220,7 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
 
     return (
       <div className="space-y-5">
-        <Link href="/schedule" className="text-sm text-emerald-900 underline underline-offset-2">
-          Back to schedule
-        </Link>
+        <BackToScheduleButton />
         <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
           <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2">
             <h1 className="text-lg font-semibold text-emerald-950">
@@ -219,11 +235,13 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
               sideHoles: front.sideHoles,
               strokeIndexByHole: Object.fromEntries(front.strokeIndexByHole.entries()),
               perHole: front.perHole,
+              players: front.players,
             }}
             back={{
               sideHoles: back.sideHoles,
               strokeIndexByHole: Object.fromEntries(back.strokeIndexByHole.entries()),
               perHole: back.perHole,
+              players: back.players,
             }}
           />
         </div>
@@ -277,6 +295,21 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
 
   const teamLabelA = teamName.get(teamAId) ?? "Team A";
   const teamLabelB = teamName.get(teamBId) ?? "Team B";
+  const rosterA = playerRows
+    .filter((p) => p.team_id === teamAId && p.is_league_member)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const rosterB = playerRows
+    .filter((p) => p.team_id === teamBId && p.is_league_member)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const submittedByPlayer = new Map(roundRows.map((r) => [r.player_id, r] as const));
+  const extraSubmitted = roundRows.filter(
+    (r) => !rosterA.some((p) => p.id === r.player_id) && !rosterB.some((p) => p.id === r.player_id),
+  );
+  const displayRows = [
+    ...rosterA.map((p) => ({ teamId: teamAId, playerId: p.id, row: submittedByPlayer.get(p.id) ?? null })),
+    ...rosterB.map((p) => ({ teamId: teamBId, playerId: p.id, row: submittedByPlayer.get(p.id) ?? null })),
+    ...extraSubmitted.map((r) => ({ teamId: r.played_for_team_id, playerId: r.player_id, row: r })),
+  ];
   const holeSummaries = holes.map((hole) => {
     const grossA = rowsA.reduce((sum, r) => sum + (strokesByRoundHole.get(`${r.id}:${hole}`) ?? 0), 0);
     const grossB = rowsB.reduce((sum, r) => sum + (strokesByRoundHole.get(`${r.id}:${hole}`) ?? 0), 0);
@@ -295,9 +328,7 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
 
   return (
     <div className="space-y-5">
-      <Link href="/schedule" className="text-sm text-emerald-900 underline underline-offset-2">
-        Back to schedule
-      </Link>
+      <BackToScheduleButton />
 
       <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
         <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2">
@@ -308,6 +339,11 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
             Showing {whichNine === "back" ? "Back 9 (10-18)" : "Front 9 (1-9)"}
             {distinctNines.length > 1 ? " - mixed sides submitted" : ""}
           </p>
+          {submittedCount > 0 && submittedCount < 4 ? (
+            <p className="mt-1 text-xs text-amber-900/85">
+              {submittedCount}/4 rounds submitted - showing missing players with blank scores until all submissions are in.
+            </p>
+          ) : null}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
@@ -338,27 +374,34 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
               </tr>
             </thead>
             <tbody>
-              {[...rowsA, ...rowsB].map((r, idx) => {
-                const name = playerName.get(r.player_id) ?? "Unknown player";
-                const subFor = r.subbing_for_player_id ? playerName.get(r.subbing_for_player_id) : null;
-                const hcap = r.handicap_at_submission;
-                const total = holes.reduce((sum, h) => sum + (strokesByRoundHole.get(`${r.id}:${h}`) ?? 0), 0);
+              {displayRows.map((entry, idx) => {
+                const r = entry.row;
+                const name = playerName.get(entry.playerId) ?? "Unknown player";
+                const subFor = r?.subbing_for_player_id ? playerName.get(r.subbing_for_player_id) : null;
+                const hcap = r?.handicap_at_submission ?? null;
+                const total = holes.reduce((sum, h) => sum + (r ? (strokesByRoundHole.get(`${r.id}:${h}`) ?? 0) : 0), 0);
                 const netTotal = holes.reduce((sum, h) => {
-                  const grossHole = strokesByRoundHole.get(`${r.id}:${h}`) ?? 0;
-                  const dots = dotsByRoundHole.get(`${r.id}:${h}`) ?? 0;
+                  const grossHole = r ? (strokesByRoundHole.get(`${r.id}:${h}`) ?? 0) : 0;
+                  const dots = r ? (dotsByRoundHole.get(`${r.id}:${h}`) ?? 0) : 0;
                   return sum + (grossHole - dots);
                 }, 0);
                 return (
-                  <tr key={r.id} className={`border-b border-emerald-900/15 ${idx % 2 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"}`}>
+                  <tr
+                    key={`${entry.playerId}:${r?.id ?? "missing"}`}
+                    className={`border-b border-emerald-900/15 ${idx % 2 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"}`}
+                  >
                     <td className="border-r border-emerald-900/15 px-3 py-2 text-left font-medium text-emerald-950">
                       {name}
                       {subFor ? <span className="ml-1 text-xs font-normal text-zinc-600">(sub for {subFor})</span> : null}
                       <span className="ml-1 text-xs font-normal text-zinc-600">[hcp {hcap ?? "-"}]</span>
                     </td>
                     {holes.map((h) => (
-                      <td key={`${r.id}:${h}`} className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono tabular-nums text-emerald-900">
+                      <td
+                        key={`${entry.playerId}:${r?.id ?? "missing"}:${h}`}
+                        className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono tabular-nums text-emerald-900"
+                      >
                         {(() => {
-                          const gross = strokesByRoundHole.get(`${r.id}:${h}`);
+                          const gross = r ? strokesByRoundHole.get(`${r.id}:${h}`) : null;
                           const par = parsByHole.get(h);
                           if (gross == null || par == null) return "-";
                           const diff = gross - par;
@@ -389,12 +432,23 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
                   </tr>
                 );
               })}
+              <tr className="border-t-2 border-emerald-900/20 bg-[#eef3e8]/90 text-emerald-900/85">
+                <td className="border-r border-emerald-900/15 px-3 py-1.5 text-left text-xs font-medium">HCP</td>
+                {holes.map((h) => (
+                  <td key={`hcp-bottom-${h}`} className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs">
+                    {strokeIndexByHole.get(h) ?? "-"}
+                  </td>
+                ))}
+                <td className="border-r border-emerald-900/15 px-3 py-1.5 text-right text-xs"> </td>
+                <td className="px-3 py-1.5 text-right text-xs"> </td>
+              </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
+      {showComputedSections ? (
+        <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
         <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2">
           <h2 className="text-sm font-semibold text-emerald-950">Match combined-net summary</h2>
         </div>
@@ -412,8 +466,10 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
           </p>
         </div>
       </div>
+      ) : null}
 
-      <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
+      {showComputedSections ? (
+        <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
         <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2">
           <h2 className="text-sm font-semibold text-emerald-950">Dots and combined-net by hole</h2>
           <p className="text-xs text-emerald-900/75">
@@ -432,17 +488,23 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
                     key={`detail-${h.hole}`}
                     className="border-r border-emerald-700/50 px-2 py-2 text-center text-[0.65rem] font-bold uppercase tracking-wider last:border-r-0"
                   >
-                    <div className="leading-tight">
-                      <div>{h.hole}</div>
-                      <div className="mt-0.5 text-[0.55rem] font-medium tracking-normal text-emerald-100/90">
-                        HCP {strokeIndexByHole.get(h.hole) ?? "-"}
-                      </div>
-                    </div>
+                    {h.hole}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
+              <tr className="border-b border-emerald-900/15 bg-[#eef3e8]/90">
+                <td className="border-r border-emerald-900/15 px-3 py-1.5 text-xs font-medium text-emerald-950">HCP</td>
+                {holeSummaries.map((h) => (
+                  <td
+                    key={`dots-hcp-${h.hole}`}
+                    className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs text-emerald-900 last:border-r-0"
+                  >
+                    {strokeIndexByHole.get(h.hole) ?? "-"}
+                  </td>
+                ))}
+              </tr>
               <tr className="border-b border-emerald-900/15 bg-[#f3f0e6]/90">
                 <td className="border-r border-emerald-900/15 px-3 py-2 font-medium text-emerald-950">Net dots</td>
                 {holeSummaries.map((h) => (
@@ -497,6 +559,7 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
           </table>
         </div>
       </div>
+      ) : null}
     </div>
   );
 }

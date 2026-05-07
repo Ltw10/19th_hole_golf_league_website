@@ -12,6 +12,7 @@ export type SkinsHoleDetail = {
 export type SkinsWeekDetail = {
   whichNine: "front" | "back" | null;
   playerCount: number;
+  buyers: string[];
   holes: SkinsHoleDetail[];
 };
 
@@ -60,6 +61,14 @@ export function SkinsWeekDetailButton({
                   Nine: {detail.whichNine === "back" ? "Back 9 (10-18)" : "Front 9 (1-9)"} - Players in:{" "}
                   <span className="font-mono">{detail.playerCount}</span>
                 </p>
+                <div className="mb-3 rounded-sm border border-emerald-900/15 bg-white/70 px-3 py-2">
+                  <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-emerald-900/70">
+                    Bought in ({detail.buyers.length})
+                  </p>
+                  <p className="mt-1 text-sm text-zinc-800">
+                    {detail.buyers.length > 0 ? detail.buyers.join(", ") : "No buy-ins recorded."}
+                  </p>
+                </div>
                 <div className="overflow-x-auto rounded-sm border border-emerald-900/20">
                   <table className="w-full border-collapse text-sm">
                     <thead>

@@ -87,6 +87,7 @@ export async function PATCH(req: Request, { params }: Params) {
     played_date: string;
     score: number;
     par: number;
+    handicap_at_submission: number | null;
   }>;
 
   if (body.score != null && (!Number.isFinite(body.score) || body.score < 18 || body.score > 200)) {
@@ -95,19 +96,65 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.par != null && (!Number.isFinite(body.par) || body.par < 18 || body.par > 144)) {
     return NextResponse.json({ error: "Par must be between 18 and 144." }, { status: 400 });
   }
+  if (
+    body.handicap_at_submission != null &&
+    (!Number.isFinite(body.handicap_at_submission) || body.handicap_at_submission < 0 || body.handicap_at_submission > 99)
+  ) {
+    return NextResponse.json({ error: "Handicap must be between 0 and 99." }, { status: 400 });
+  }
 
   const admin = createAdminSupabaseClient();
-  const { data, error } = await admin
-    .from("handicap_helper_scores")
-    .update({
-      ...body,
-      score: body.score != null ? Math.round(body.score) : undefined,
-      par: body.par != null ? Math.round(body.par) : undefined,
-    })
-    .eq("id", id)
-    .select()
-    .maybeSingle();
+  const hhUpdate: {
+    player_id?: string;
+    played_date?: string;
+    score?: number;
+    par?: number;
+  } = {};
+  if (body.player_id != null) hhUpdate.player_id = body.player_id;
+  if (body.played_date != null) hhUpdate.played_date = body.played_date;
+  if (body.score != null) hhUpdate.score = Math.round(body.score);
+  if (body.par != null) hhUpdate.par = Math.round(body.par);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  let data:
+    | {
+        player_id: string;
+        played_date: string;
+      }
+    | null = null;
+  if (Object.keys(hhUpdate).length > 0) {
+    const { data: updated, error } = await admin
+      .from("handicap_helper_scores")
+      .update(hhUpdate)
+      .eq("id", id)
+      .select("player_id, played_date")
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    data = (updated as { player_id: string; played_date: string } | null) ?? null;
+  } else {
+    const { data: existing, error } = await admin
+      .from("handicap_helper_scores")
+      .select("player_id, played_date")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    data = (existing as { player_id: string; played_date: string } | null) ?? null;
+  }
+
+  if (data && body.handicap_at_submission != null) {
+    const playerId = data.player_id;
+    const playedDate = data.played_date;
+    const { data: weekRows, error: wErr } = await admin.from("season_weeks").select("id").eq("week_date", playedDate);
+    if (wErr) return NextResponse.json({ error: wErr.message }, { status: 500 });
+    const weekIds = (weekRows ?? []).map((w) => w.id as string);
+    if (weekIds.length > 0) {
+      const { error: prErr } = await admin
+        .from("player_rounds")
+        .update({ handicap_at_submission: Math.round(Number(body.handicap_at_submission)) })
+        .eq("player_id", playerId)
+        .in("week_id", weekIds);
+      if (prErr) return NextResponse.json({ error: prErr.message }, { status: 500 });
+    }
+  }
+
   return NextResponse.json({ data });
 }

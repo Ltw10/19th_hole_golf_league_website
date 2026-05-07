@@ -84,6 +84,7 @@ export default async function SchedulePage() {
   let skinsByWeek = new Map<string, SkinAgg[]>();
   let skinsPotByWeek = new Map<string, number>();
   let skinsDetailByWeek = new Map<string, SkinsWeekDetail>();
+  let skinsBuyerCountByWeek = new Map<string, number>();
   let skinsBuyinAmount = 5;
 
   try {
@@ -285,12 +286,18 @@ export default async function SchedulePage() {
       }
 
       const buyerCountByWeek = new Map<string, number>();
+      const buyerNamesByWeek = new Map<string, string[]>();
       for (const row of buyins ?? []) {
         const wid = row.week_id as string;
+        const pid = row.player_id as string;
         buyerCountByWeek.set(wid, (buyerCountByWeek.get(wid) ?? 0) + 1);
+        const list = buyerNamesByWeek.get(wid) ?? [];
+        list.push(playerName.get(pid) ?? "?");
+        buyerNamesByWeek.set(wid, list);
       }
       for (const [wid, n] of buyerCountByWeek) {
         skinsPotByWeek.set(wid, skinsBuyinAmount * n);
+        skinsBuyerCountByWeek.set(wid, n);
       }
 
       for (const wk of weeks) {
@@ -316,6 +323,7 @@ export default async function SchedulePage() {
         skinsDetailByWeek.set(wk.id, {
           whichNine,
           playerCount: new Set(roundsInWeek.map((r) => r.player_id)).size,
+          buyers: [...new Set((buyerNamesByWeek.get(wk.id) ?? []).sort((a, b) => a.localeCompare(b)))],
           holes: holesDetail,
         });
       }
@@ -358,6 +366,7 @@ export default async function SchedulePage() {
             const ms = byWeek.get(w.id) ?? [];
             const skinRows = skinsByWeek.get(w.id) ?? [];
             const pot = skinsPotByWeek.get(w.id) ?? 0;
+            const skinsPlayers = skinsBuyerCountByWeek.get(w.id) ?? 0;
             return (
               <li
                 key={w.id}
@@ -507,7 +516,10 @@ export default async function SchedulePage() {
                     <span className="font-mono font-semibold tabular-nums">
                       ${pot.toFixed(2)}
                     </span>{" "}
-                    <span className="text-emerald-800/60">(${skinsBuyinAmount.toFixed(2)} × buyers)</span>
+                    <span className="text-emerald-800/60">
+                      (${skinsBuyinAmount.toFixed(2)} × buyers) · Players in:{" "}
+                      <span className="font-mono tabular-nums">{skinsPlayers}</span>
+                    </span>
                   </div>
                   <div className="overflow-x-auto">
                     {skinRows.length === 0 ? (

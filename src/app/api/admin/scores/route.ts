@@ -27,6 +27,7 @@ type HandicapRow = Record<string, unknown> & {
   score: number;
   par: number;
   created_at: string;
+  handicap_at_submission: number | null;
 };
 
 /** List score submissions (admin) and weeks (for test cleanup dropdown). */
@@ -39,6 +40,7 @@ export async function GET(req: Request) {
     { data: teams, error: tErr },
     { data: players, error: pListErr },
     { data: rawHandicapRows, error: hErr },
+    { data: playerRounds, error: prErr },
   ] = await Promise.all([
     admin.from("score_submissions").select("*").order("created_at", { ascending: false }),
     admin.from("season_weeks").select("id, week_number, week_date, phase").order("week_number", {
@@ -51,6 +53,7 @@ export async function GET(req: Request) {
       .select("id, player_id, played_date, score, par, created_at")
       .order("played_date", { ascending: false })
       .order("created_at", { ascending: false }),
+    admin.from("player_rounds").select("player_id, week_id, handicap_at_submission"),
   ]);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -58,6 +61,7 @@ export async function GET(req: Request) {
   if (tErr) return NextResponse.json({ error: tErr.message }, { status: 500 });
   if (pListErr) return NextResponse.json({ error: pListErr.message }, { status: 500 });
   if (hErr) return NextResponse.json({ error: hErr.message }, { status: 500 });
+  if (prErr) return NextResponse.json({ error: prErr.message }, { status: 500 });
 
   const teamMap = new Map((teams ?? []).map((t) => [t.id as string, t.name as string]));
   const weekMap = new Map(
@@ -102,9 +106,20 @@ export async function GET(req: Request) {
   });
 
   const allPlayerNameById = new Map((players ?? []).map((p) => [p.id as string, p.name as string]));
+  const weekDateById = new Map((weeks ?? []).map((w) => [w.id as string, w.week_date as string]));
+  const snapshotByPlayerDate = new Map<string, number>();
+  for (const pr of playerRounds ?? []) {
+    const pid = pr.player_id as string;
+    const wid = pr.week_id as string;
+    const snap = pr.handicap_at_submission as number | null;
+    const ymd = weekDateById.get(wid);
+    if (!ymd || snap == null) continue;
+    snapshotByPlayerDate.set(`${pid}:${ymd}`, Number(snap));
+  }
   const handicap_scores = (rawHandicapRows as HandicapRow[] | null)?.map((row) => ({
     ...row,
     player_name: allPlayerNameById.get(row.player_id) ?? "Unknown player",
+    handicap_at_submission: snapshotByPlayerDate.get(`${row.player_id}:${row.played_date}`) ?? null,
   }));
 
   return NextResponse.json({ data: data ?? [], weeks: weeks ?? [], handicap_scores: handicap_scores ?? [], players: players ?? [] });

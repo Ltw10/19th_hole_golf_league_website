@@ -57,6 +57,7 @@ export function HandicapHelperClient({
   const [par, setPar] = useState("36");
   const [submitStatus, setSubmitStatus] = useState<"idle" | "loading" | "ok" | "err">("idle");
   const [submitMessage, setSubmitMessage] = useState("");
+  const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
 
   const [addedPlayers, setAddedPlayers] = useState<PlayerOption[]>([]);
   const [newPlayerName, setNewPlayerName] = useState("");
@@ -130,8 +131,7 @@ export function HandicapHelperClient({
     router.refresh();
   }
 
-  async function onSubmitScore(e: React.FormEvent) {
-    e.preventDefault();
+  async function submitScoreNow() {
     setSubmitStatus("loading");
     setSubmitMessage("");
     const pid = playerId.trim();
@@ -183,6 +183,11 @@ export function HandicapHelperClient({
     }
   }
 
+  async function onSubmitScore(e: React.FormEvent) {
+    e.preventDefault();
+    setConfirmSubmitOpen(true);
+  }
+
   const sortedSummary = useMemo(
     () =>
       [...initialSummary].sort((a, b) => {
@@ -222,6 +227,7 @@ export function HandicapHelperClient({
           onClick={() => {
             setSubmitStatus("idle");
             setSubmitMessage("");
+            setConfirmSubmitOpen(false);
             setNewPlayerName("");
             setAddPlayerError("");
             setAddOpen(true);
@@ -252,11 +258,53 @@ export function HandicapHelperClient({
               <button
                 type="button"
                 className="rounded-md px-2 py-1 text-sm text-emerald-900/80 hover:bg-emerald-900/10"
-                onClick={() => setAddOpen(false)}
+                onClick={() => {
+                  setConfirmSubmitOpen(false);
+                  setAddOpen(false);
+                }}
               >
                 Close
               </button>
             </div>
+            {confirmSubmitOpen ? (
+              <div
+                className="mt-4 rounded-md border border-amber-300/70 bg-amber-50/80 p-3"
+                role="dialog"
+                aria-modal="false"
+                aria-label="Submit destination confirmation"
+              >
+                <p className="text-sm font-medium text-amber-950">
+                  Did you mean to use Submit Round instead?
+                </p>
+                <p className="mt-1 text-xs text-amber-900/80">
+                  Handicap Helper is for logging rounds only. Submit Round is used for league-night scoring, points, and skins.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-emerald-900/35 bg-white px-3 py-2 text-sm font-medium text-emerald-950 hover:bg-emerald-50"
+                    onClick={() => {
+                      setConfirmSubmitOpen(false);
+                      setAddOpen(false);
+                      router.push("/submit-round");
+                    }}
+                  >
+                    Go to Submit Round
+                  </button>
+                  <button
+                    type="button"
+                    disabled={submitStatus === "loading"}
+                    className="rounded-md bg-emerald-950 px-3 py-2 text-sm font-semibold text-[#f2efe4] disabled:opacity-60"
+                    onClick={() => {
+                      setConfirmSubmitOpen(false);
+                      void submitScoreNow();
+                    }}
+                  >
+                    {submitStatus === "loading" ? "Saving…" : "Continue here"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <form className="mt-4 space-y-4" onSubmit={onSubmitScore}>
               <label className="block text-sm font-medium text-emerald-950">
                 Player
@@ -352,15 +400,18 @@ export function HandicapHelperClient({
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
                   type="submit"
-                  disabled={submitStatus === "loading"}
+                  disabled={submitStatus === "loading" || confirmSubmitOpen}
                   className="rounded-md bg-emerald-950 px-4 py-2 text-sm font-semibold text-[#f2efe4] disabled:opacity-60"
                 >
-                  {submitStatus === "loading" ? "Saving…" : "Save score"}
+                  {submitStatus === "loading" ? "Saving…" : confirmSubmitOpen ? "Confirm above" : "Save score"}
                 </button>
                 <button
                   type="button"
                   className="rounded-md border border-emerald-900/30 px-4 py-2 text-sm text-emerald-950"
-                  onClick={() => setAddOpen(false)}
+                  onClick={() => {
+                    setConfirmSubmitOpen(false);
+                    setAddOpen(false);
+                  }}
                 >
                   Cancel
                 </button>

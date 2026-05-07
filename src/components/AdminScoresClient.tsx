@@ -42,6 +42,7 @@ type HandicapRow = {
   played_date: string;
   score: number;
   par: number;
+  handicap_at_submission: number | null;
   created_at: string;
 };
 
@@ -118,6 +119,7 @@ export function AdminScoresClient() {
   const [players, setPlayers] = useState<PlayerOption[]>([]);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
   const [cleanupWeekId, setCleanupWeekId] = useState("");
+  const [recomputeWeekId, setRecomputeWeekId] = useState("");
   const [selectedHandicapPlayerId, setSelectedHandicapPlayerId] = useState<string | null>(null);
   const [editingHandicapRowId, setEditingHandicapRowId] = useState<string | null>(null);
   const [deletingHandicapRowId, setDeletingHandicapRowId] = useState<string | null>(null);
@@ -131,6 +133,7 @@ export function AdminScoresClient() {
   const [holeDrafts, setHoleDrafts] = useState<HoleDraft[]>([]);
   const [savingSettings, setSavingSettings] = useState(false);
   const [savingHoles, setSavingHoles] = useState(false);
+  const [recomputingWeek, setRecomputingWeek] = useState(false);
 
   const authHeader = useCallback(() => {
     return { Authorization: `Bearer ${secret}` };
@@ -229,6 +232,28 @@ export function AdminScoresClient() {
       return;
     }
     await load();
+  }
+
+  async function recomputeWeek() {
+    if (!recomputeWeekId) return;
+    if (!confirm("Recompute skins + match scores for this week using the saved handicap snapshots?")) return;
+    setRecomputingWeek(true);
+    setErr("");
+    try {
+      const res = await fetch("/api/admin/week-recompute", {
+        method: "POST",
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ week_id: recomputeWeekId }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErr(json.error ?? "Recompute failed");
+        return;
+      }
+      await load();
+    } finally {
+      setRecomputingWeek(false);
+    }
   }
 
   const weekGroups = useMemo(() => (rows ? groupByWeek(rows) : []), [rows]);
@@ -537,6 +562,38 @@ export function AdminScoresClient() {
               </button>
             </div>
             <div className="rounded-md border border-zinc-200 bg-white/80 p-3">
+              <p className="text-sm font-medium text-zinc-900">Recompute skins + match scores for one week</p>
+              <p className="mt-1 text-xs text-zinc-600">
+                Use after changing saved handicaps to refresh the week&apos;s skins results and matchup points.
+              </p>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
+                  Week
+                  <select
+                    className="min-w-[14rem] rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900"
+                    value={recomputeWeekId}
+                    onChange={(e) => setRecomputeWeekId(e.target.value)}
+                  >
+                    <option value="">Select week</option>
+                    {weeks.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        Week {w.week_number} — {formatSeasonPhase(w.phase)} ({w.week_date})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={recomputeWeek}
+                  disabled={loading || recomputingWeek || !secret || !recomputeWeekId}
+                  className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  {recomputingWeek ? "Recomputing…" : "Recompute week"}
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-zinc-200 bg-white/80 p-3">
               <p className="text-sm font-medium text-zinc-900">Test cleanup (scores + skins for one week)</p>
               <p className="mt-1 text-xs text-zinc-600">
                 Clears per-player rounds (hole scores), matchup scorecards, handicap helper rows for that Tuesday&apos;s
@@ -688,6 +745,7 @@ export function AdminScoresClient() {
                                   played_date: draft.played_date,
                                   score: draft.score,
                                   par: draft.par,
+                                  handicap_at_submission: draft.handicap_at_submission,
                                 }),
                               });
                               const json = await res.json();
@@ -854,7 +912,8 @@ function HandicapScoreEditor({
     draft.player_id !== row.player_id ||
     draft.played_date !== row.played_date ||
     draft.score !== row.score ||
-    draft.par !== row.par;
+    draft.par !== row.par ||
+    draft.handicap_at_submission !== row.handicap_at_submission;
 
   return (
     <div className="space-y-2 text-sm">
@@ -895,7 +954,8 @@ function HandicapScoreEditor({
         </label>
       </div>
       <div className="flex items-end justify-between gap-3">
-        <label className="block w-28">
+        <div className="flex items-end gap-3">
+          <label className="block w-28">
           Par
           <input
             type="number"
@@ -906,6 +966,23 @@ function HandicapScoreEditor({
             onChange={(e) => setDraft({ ...draft, par: Number(e.target.value) })}
           />
         </label>
+          <label className="block w-36">
+            Saved handicap
+            <input
+              type="number"
+              min={0}
+              max={99}
+              className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
+              value={draft.handicap_at_submission ?? ""}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  handicap_at_submission: e.target.value === "" ? null : Number(e.target.value),
+                })
+              }
+            />
+          </label>
+        </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
