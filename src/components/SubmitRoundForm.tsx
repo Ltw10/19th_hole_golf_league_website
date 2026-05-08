@@ -434,7 +434,7 @@ export function SubmitRoundForm({
               checked={whichNine === "front"}
               onChange={() => setWhichNine("front")}
             />
-            Front nine (holes 1–9)
+            Front nine
           </label>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-800">
             <input
@@ -444,7 +444,7 @@ export function SubmitRoundForm({
               checked={whichNine === "back"}
               onChange={() => setWhichNine("back")}
             />
-            Back nine (holes 10–18)
+            Back nine
           </label>
         </div>
       </fieldset>
@@ -463,60 +463,88 @@ export function SubmitRoundForm({
             Course data is missing nine holes. Ask an admin to run migrations or edit Pars in admin.
           </p>
         ) : (
-          <div className="mt-3 overflow-x-auto rounded-md border border-zinc-200">
-            <table className="w-full min-w-[480px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-zinc-200 bg-zinc-50">
-                  <th className="px-2 py-2 text-left font-medium text-zinc-700">Hole</th>
-                  <th className="px-2 py-2 text-center font-medium text-zinc-700">Par</th>
-                  <th className="px-2 py-2 text-center font-medium text-zinc-700">Handicap</th>
-                  <th className="px-2 py-2 text-center font-medium text-zinc-700">Gross</th>
-                  <th className="px-2 py-2 text-right font-medium text-zinc-700">Net</th>
-                </tr>
-              </thead>
-              <tbody>
-                {holesSorted.map((hole, idx) => {
-                  const g = strokes[idx] ?? 4;
-                  const net = holeNet(g, holesSorted, effectiveHandicap, hole.hole_number);
-                  return (
-                    <tr key={hole.hole_number} className="border-b border-zinc-100">
-                      <td className="px-2 py-2 font-medium text-zinc-900">{hole.hole_number}</td>
-                      <td className="px-2 py-2 text-center tabular-nums text-zinc-700">{hole.par}</td>
-                      <td className="px-2 py-2 text-center tabular-nums text-zinc-700">{hole.stroke_index}</td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          required
-                          min={1}
-                          max={20}
-                          className="w-full min-w-[4rem] rounded border border-zinc-300 px-2 py-1.5 text-center tabular-nums"
-                          value={g}
-                          onChange={(e) => {
-                            const n = [...strokes];
-                            n[idx] = Number(e.target.value);
-                            setStrokes(n);
-                          }}
-                        />
-                      </td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums text-emerald-900">{net}</td>
-                    </tr>
-                  );
-                })}
-                <tr className="border-t-2 border-emerald-200 bg-emerald-50/70">
-                  <td className="px-2 py-2 font-semibold text-emerald-950">Total</td>
-                  <td className="px-2 py-2 text-center font-mono font-semibold tabular-nums text-emerald-950">
-                    {totals.par}
-                  </td>
-                  <td className="px-2 py-2 text-center text-zinc-500">—</td>
-                  <td className="px-2 py-2 text-center font-mono font-semibold tabular-nums text-emerald-950">
-                    {totals.gross}
-                  </td>
-                  <td className="px-2 py-2 text-right font-mono font-semibold tabular-nums text-emerald-950">
-                    {totals.net}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="mt-3 overflow-hidden rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
+            <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2 text-center">
+              <span className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-emerald-900/65">
+                Score entry card
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b-2 border-emerald-900/25 bg-emerald-950 text-[#f2efe4]">
+                    <th className="w-12 border-r border-emerald-700/50 px-2 py-2 text-left text-[0.65rem] font-bold uppercase tracking-wider">
+                      Hole
+                    </th>
+                    <th className="w-16 border-r border-emerald-700/50 px-2 py-2 text-center text-[0.65rem] font-bold uppercase tracking-wider">
+                      Par
+                    </th>
+                    <th className="w-20 border-r border-emerald-700/50 px-2 py-2 text-center text-[0.65rem] font-bold uppercase tracking-wider">
+                      HCP
+                    </th>
+                    <th className="w-24 border-r border-emerald-700/50 px-2 py-2 text-center text-[0.65rem] font-bold uppercase tracking-wider">
+                      Gross
+                    </th>
+                    <th className="w-20 px-3 py-2 text-right text-[0.65rem] font-bold uppercase tracking-wider">
+                      Net
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {holesSorted.map((hole, idx) => {
+                    const g = strokes[idx] ?? hole.par;
+                    const net = holeNet(g, holesSorted, effectiveHandicap, hole.hole_number);
+                    return (
+                      <tr
+                        key={hole.hole_number}
+                        className={`border-b border-emerald-900/10 ${idx % 2 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"}`}
+                      >
+                        <td className="border-r border-emerald-900/15 px-2 py-2 font-mono text-emerald-950">
+                          {hole.hole_number}
+                        </td>
+                        <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono tabular-nums text-emerald-900/85">
+                          {hole.par}
+                        </td>
+                        <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono tabular-nums text-emerald-900/85">
+                          {hole.stroke_index}
+                        </td>
+                        <td className="border-r border-emerald-900/15 px-2 py-2">
+                          <input
+                            type="number"
+                            required
+                            min={1}
+                            max={20}
+                            className="w-full min-w-[4rem] rounded border border-emerald-900/25 bg-white px-2 py-1.5 text-center font-mono tabular-nums text-emerald-950"
+                            value={g}
+                            onChange={(e) => {
+                              const n = [...strokes];
+                              n[idx] = Number(e.target.value);
+                              setStrokes(n);
+                            }}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold tabular-nums text-emerald-950">
+                          {net}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="border-t-2 border-emerald-900/20 bg-[#eef3e8]/90">
+                    <td className="border-r border-emerald-900/15 px-2 py-2 font-semibold text-emerald-950">Total</td>
+                    <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono font-semibold tabular-nums text-emerald-950">
+                      {totals.par}
+                    </td>
+                    <td className="border-r border-emerald-900/15 px-2 py-2 text-center text-zinc-500">—</td>
+                    <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono font-semibold tabular-nums text-emerald-950">
+                      {totals.gross}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono font-semibold tabular-nums text-emerald-950">
+                      {totals.net}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
@@ -524,7 +552,7 @@ export function SubmitRoundForm({
       <div>
         <span className="block text-sm font-medium text-zinc-700">Scorecard photo (optional)</span>
         <p className="mt-0.5 text-xs text-zinc-500">
-          If you upload a picture, it becomes the scorecard image for this matchup (latest upload wins).
+          If you upload a picture, it becomes the scorecard image for this matchup (latest upload shows on the schedule).
         </p>
         <div className="mt-2 rounded-lg border-2 border-dashed border-emerald-300/90 bg-gradient-to-b from-emerald-50/90 to-white px-4 py-5 text-center shadow-sm">
           <input
