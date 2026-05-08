@@ -8,8 +8,8 @@ import { usePathname } from "next/navigation";
 const links = [
   { href: "/schedule", label: "Schedule" },
   { href: "/standings", label: "Standings" },
-  { href: "/handicap-helper", label: "Handicap Helper" },
   { href: "/submit-round", label: "Submit Round" },
+  { href: "/handicap-helper", label: "Handicap Helper" },
   { href: "/admin/scores", label: "Admin" },
 ] as const;
 
