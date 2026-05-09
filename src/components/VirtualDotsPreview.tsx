@@ -12,24 +12,27 @@ type SideData = {
   sideHoles: number[];
   strokeIndexByHole: Record<number, number>;
   perHole: HoleNetDot[];
-  players: Array<{
-    id: string;
-    name: string;
-    team: string;
-    handicap: number;
-    dotsByHole: Record<number, number>;
-  }>;
+};
+
+export type DotsCalcSummary = {
+  teamLabelA: string;
+  teamLabelB: string;
+  hcpA: number;
+  hcpB: number;
 };
 
 export function VirtualDotsPreview({
   front,
   back,
   initialNine = "front",
+  calcSummary,
 }: {
   front: SideData;
   back: SideData;
   /** Which nine to show first (e.g. match `which_nine` from submitted rounds). */
   initialNine?: "front" | "back";
+  /** When set, explains handicap difference math when expanding calculation details. */
+  calcSummary?: DotsCalcSummary;
 }) {
   const nineGroupId = useId();
   const [side, setSide] = useState<"front" | "back">(initialNine);
@@ -121,81 +124,38 @@ export function VirtualDotsPreview({
           {showCalc ? "Hide calculation details" : "See how this was calculated"}
         </button>
         {showCalc ? (
-          <div className="mt-3 overflow-x-auto rounded-sm border border-emerald-900/20">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-emerald-900/20 bg-emerald-950 text-[#f2efe4]">
-                  <th
-                    rowSpan={2}
-                    className="border-r border-emerald-700/50 px-3 py-2 align-middle text-left text-[0.65rem] font-bold uppercase tracking-wide"
-                  >
-                    Player
-                  </th>
-                  <th
-                    rowSpan={2}
-                    className="border-r border-emerald-700/50 px-2 py-2 align-middle text-center text-[0.65rem] font-bold uppercase tracking-wide"
-                  >
-                    Hcp
-                  </th>
-                  <th
-                    colSpan={data.sideHoles.length}
-                    className="border-b border-emerald-700/40 px-2 py-1.5 text-center text-[0.65rem] font-bold uppercase tracking-wide"
-                  >
-                    Hole
-                  </th>
-                </tr>
-                <tr className="border-b-2 border-emerald-900/25 bg-emerald-950 text-[#f2efe4]">
-                  {data.sideHoles.map((h) => (
-                    <th
-                      key={`calc-hole-${side}-${h}`}
-                      className="border-r border-emerald-700/50 px-2 py-2 text-center font-mono text-[0.65rem] font-bold tabular-nums tracking-wide last:border-r-0"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-emerald-900/15 bg-[#eef3e8]/90">
-                  <td className="border-r border-emerald-900/15 px-3 py-1.5 text-xs font-medium text-emerald-950">
-                    Stroke Index
-                  </td>
-                  <td className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs text-zinc-500">
-                    —
-                  </td>
-                  {data.sideHoles.map((h) => (
-                    <td
-                      key={`calc-si-${side}-${h}`}
-                      className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs tabular-nums text-emerald-900 last:border-r-0"
-                    >
-                      {data.strokeIndexByHole[h] ?? "—"}
-                    </td>
-                  ))}
-                </tr>
-                {data.players.map((p, idx) => (
-                  <tr
-                    key={`${side}-${p.id}`}
-                    className={`border-b border-emerald-900/10 last:border-b-0 ${idx % 2 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"}`}
-                  >
-                    <td className="border-r border-emerald-900/15 px-3 py-2 text-left font-medium text-emerald-950">
-                      {p.name}
-                      <span className="ml-1 text-xs font-normal text-zinc-600">({p.team})</span>
-                    </td>
-                    <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono tabular-nums text-emerald-900">
-                      {p.handicap}
-                    </td>
-                    {data.sideHoles.map((h) => (
-                      <td
-                        key={`${side}-${p.id}-${h}`}
-                        className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono text-sm tracking-[0.12em] text-emerald-900 last:border-r-0"
-                      >
-                        {p.dotsByHole[h] > 0 ? "•".repeat(p.dotsByHole[h]) : "—"}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-3 space-y-3">
+            {calcSummary ? (
+              <div className="rounded-md border border-emerald-900/25 bg-[#f4f7f0] px-3 py-2.5 text-xs leading-relaxed text-emerald-950">
+                <p className="font-semibold text-emerald-950">Handicap difference → match strokes</p>
+                <p className="mt-1 font-mono tabular-nums">
+                  <span className="font-sans font-normal text-emerald-900/85">{calcSummary.teamLabelA} combined:</span>{" "}
+                  {calcSummary.hcpA}
+                  <span className="mx-1 font-sans text-emerald-700">·</span>
+                  <span className="font-sans font-normal text-emerald-900/85">{calcSummary.teamLabelB} combined:</span>{" "}
+                  {calcSummary.hcpB}
+                </p>
+                <p className="mt-1 font-mono tabular-nums">
+                  Difference: {calcSummary.hcpA} − {calcSummary.hcpB} ={" "}
+                  <strong>{calcSummary.hcpA - calcSummary.hcpB}</strong>
+                </p>
+                {calcSummary.hcpA === calcSummary.hcpB ? (
+                  <p className="mt-1 text-emerald-900/90">
+                    Combined handicaps are equal, so net scoring uses gross only—no handicap strokes on either side.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-emerald-900/90">
+                    Only the magnitude <strong>{Math.abs(calcSummary.hcpA - calcSummary.hcpB)}</strong> is spread across
+                    this nine (extra strokes on the lowest stroke-index holes first). Those strokes apply only to{" "}
+                    <strong>
+                      {calcSummary.hcpA > calcSummary.hcpB ? calcSummary.teamLabelA : calcSummary.teamLabelB}
+                    </strong>{" "}
+                    (the higher combined handicap). The <strong>Net dots</strong> row on the scorecard above shows how many
+                    of those strokes fall on each hole (the other team has no handicap strokes on net).
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

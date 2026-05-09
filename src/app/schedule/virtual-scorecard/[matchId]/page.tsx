@@ -1,7 +1,12 @@
 import { notFound } from "next/navigation";
 import { BackToScheduleButton } from "@/components/BackToScheduleButton";
 import { VirtualDotsPreview } from "@/components/VirtualDotsPreview";
-import { effectiveHandicapForRound, handicapFromScores, strokesReceivedOnHole } from "@/lib/scoring";
+import {
+  effectiveHandicapForRound,
+  handicapFromScores,
+  strokesFromTeamHandicapDiffOnHole,
+  strokesReceivedOnHole,
+} from "@/lib/scoring";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -55,8 +60,6 @@ function buildVirtualDotsPreviewSides(
   sumHcpB: number,
   teamLabelA: string,
   teamLabelB: string,
-  teamAId: string,
-  teamBId: string,
 ) {
   function netDotsForSide(side: "front" | "back") {
     const sideHoles = side === "back" ? [10, 11, 12, 13, 14, 15, 16, 17, 18] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -67,37 +70,20 @@ function buildVirtualDotsPreviewSides(
     const strokeIndexByHole = new Map(sideCourse.map((h) => [h.hole_number, h.stroke_index]));
 
     const perHole = sideHoles.map((hole) => {
-      const dotsA = strokesReceivedOnHole(sideCourse, sumHcpA, hole);
-      const dotsB = strokesReceivedOnHole(sideCourse, sumHcpB, hole);
+      const { strokesA: dotsA, strokesB: dotsB } = strokesFromTeamHandicapDiffOnHole(
+        sideCourse,
+        sumHcpA,
+        sumHcpB,
+        hole,
+      );
       const diff = Math.abs(dotsA - dotsB);
       const team = dotsA === dotsB ? null : dotsA > dotsB ? teamLabelA : teamLabelB;
       return { hole, diff, team };
     });
-    const players = [
-      {
-        id: `combined-${teamAId}`,
-        name: `${teamLabelA} (team handicap)`,
-        team: teamLabelA,
-        handicap: sumHcpA,
-        dotsByHole: Object.fromEntries(
-          sideHoles.map((hole) => [hole, strokesReceivedOnHole(sideCourse, sumHcpA, hole)]),
-        ),
-      },
-      {
-        id: `combined-${teamBId}`,
-        name: `${teamLabelB} (team handicap)`,
-        team: teamLabelB,
-        handicap: sumHcpB,
-        dotsByHole: Object.fromEntries(
-          sideHoles.map((hole) => [hole, strokesReceivedOnHole(sideCourse, sumHcpB, hole)]),
-        ),
-      },
-    ].sort((a, b) => a.team.localeCompare(b.team));
     return {
       sideHoles,
       strokeIndexByHole: Object.fromEntries(strokeIndexByHole.entries()),
       perHole,
-      players,
     };
   }
   return { front: netDotsForSide("front"), back: netDotsForSide("back") };
@@ -235,8 +221,6 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
       sumHcpB,
       teamLabelA,
       teamLabelB,
-      teamAId,
-      teamBId,
     );
 
     return (
@@ -248,13 +232,19 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
               Virtual scorecard: {teamLabelA} vs {teamLabelB}
             </h1>
             <p className="text-xs text-emerald-900/75">
-              No round submissions yet. Showing projected net dots from combined team handicaps (strokes allocated once per
-              team from the sum of partners).
+              No round submissions yet. Showing projected net dots from the difference of combined team handicaps (strokes
+              from that difference only go to the higher-handicap side on each hole).
             </p>
           </div>
           <VirtualDotsPreview
             front={dotsFront}
             back={dotsBack}
+            calcSummary={{
+              teamLabelA,
+              teamLabelB,
+              hcpA: sumHcpA,
+              hcpB: sumHcpB,
+            }}
           />
         </div>
       </div>
@@ -317,8 +307,6 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
     teamHcpB,
     teamLabelA,
     teamLabelB,
-    teamAId,
-    teamBId,
   );
   const rosterA = playerRows
     .filter((p) => p.team_id === teamAId && p.is_league_member)
@@ -338,8 +326,12 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
   const holeSummaries = holes.map((hole) => {
     const grossA = rowsA.reduce((sum, r) => sum + (strokesByRoundHole.get(`${r.id}:${hole}`) ?? 0), 0);
     const grossB = rowsB.reduce((sum, r) => sum + (strokesByRoundHole.get(`${r.id}:${hole}`) ?? 0), 0);
-    const dotsA = strokesReceivedOnHole(courseHoles, teamHcpA, hole);
-    const dotsB = strokesReceivedOnHole(courseHoles, teamHcpB, hole);
+    const { strokesA: dotsA, strokesB: dotsB } = strokesFromTeamHandicapDiffOnHole(
+      courseHoles,
+      teamHcpA,
+      teamHcpB,
+      hole,
+    );
     const netA = grossA - dotsA;
     const netB = grossB - dotsB;
     const netDotDiff = Math.abs(dotsA - dotsB);
@@ -498,8 +490,9 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
         <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2">
           <h2 className="text-sm font-semibold text-emerald-950">Dots and combined-net by hole</h2>
           <p className="text-xs text-emerald-900/75">
-            Team dots use one stroke allocation per team from combined partner handicaps (not per-player dots summed).
-            Combined gross is shown; hole winners use net after those team dots.
+            Net uses the difference of combined team handicaps: that difference is spread across the nine (hardest holes by
+            stroke index first), and only the higher-handicap team subtracts those strokes from combined gross each hole.
+            Combined gross is shown; hole winners use net after those strokes.
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -591,15 +584,21 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
         <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2">
           <h2 className="text-sm font-semibold text-emerald-950">How team dots are calculated</h2>
           <p className="text-xs text-emerald-900/75">
-            Combined partner handicaps for this match
-            {submittedCount >= 4 ? " (from submission snapshots)." : " (from rounds submitted so far)."} Front and back
-            nines show where strokes fall using those totals; expand for per-hole detail.
+            Uses combined handicaps for this match
+            {submittedCount >= 4 ? " (submission snapshots)." : " (from rounds submitted so far)."} Only the handicap
+            difference between teams is allocated hole-by-hole; expand for the math and per-hole strokes.
           </p>
         </div>
         <VirtualDotsPreview
           front={submittedDotsPreview.front}
           back={submittedDotsPreview.back}
           initialNine={whichNine}
+          calcSummary={{
+            teamLabelA,
+            teamLabelB,
+            hcpA: teamHcpA,
+            hcpB: teamHcpB,
+          }}
         />
       </div>
     </div>
