@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 type HoleNetDot = {
   hole: number;
@@ -24,11 +24,15 @@ type SideData = {
 export function VirtualDotsPreview({
   front,
   back,
+  initialNine = "front",
 }: {
   front: SideData;
   back: SideData;
+  /** Which nine to show first (e.g. match `which_nine` from submitted rounds). */
+  initialNine?: "front" | "back";
 }) {
-  const [side, setSide] = useState<"front" | "back">("front");
+  const nineGroupId = useId();
+  const [side, setSide] = useState<"front" | "back">(initialNine);
   const [showCalc, setShowCalc] = useState(false);
   const data = useMemo(() => (side === "back" ? back : front), [side, back, front]);
 
@@ -38,11 +42,21 @@ export function VirtualDotsPreview({
         <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-zinc-700">Show nine</legend>
         <div className="flex flex-wrap gap-4">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-800">
-            <input type="radio" name="virtual-nine" checked={side === "front"} onChange={() => setSide("front")} />
+            <input
+              type="radio"
+              name={`virtual-nine-${nineGroupId}`}
+              checked={side === "front"}
+              onChange={() => setSide("front")}
+            />
             Front 9
           </label>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-800">
-            <input type="radio" name="virtual-nine" checked={side === "back"} onChange={() => setSide("back")} />
+            <input
+              type="radio"
+              name={`virtual-nine-${nineGroupId}`}
+              checked={side === "back"}
+              onChange={() => setSide("back")}
+            />
             Back 9
           </label>
         </div>
@@ -111,16 +125,30 @@ export function VirtualDotsPreview({
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-emerald-900/20 bg-emerald-950 text-[#f2efe4]">
-                  <th className="border-r border-emerald-700/50 px-3 py-2 text-left text-[0.65rem] font-bold uppercase tracking-wide">
+                  <th
+                    rowSpan={2}
+                    className="border-r border-emerald-700/50 px-3 py-2 align-middle text-left text-[0.65rem] font-bold uppercase tracking-wide"
+                  >
                     Player
                   </th>
-                  <th className="border-r border-emerald-700/50 px-2 py-2 text-center text-[0.65rem] font-bold uppercase tracking-wide">
+                  <th
+                    rowSpan={2}
+                    className="border-r border-emerald-700/50 px-2 py-2 align-middle text-center text-[0.65rem] font-bold uppercase tracking-wide"
+                  >
                     Hcp
                   </th>
+                  <th
+                    colSpan={data.sideHoles.length}
+                    className="border-b border-emerald-700/40 px-2 py-1.5 text-center text-[0.65rem] font-bold uppercase tracking-wide"
+                  >
+                    Hole
+                  </th>
+                </tr>
+                <tr className="border-b-2 border-emerald-900/25 bg-emerald-950 text-[#f2efe4]">
                   {data.sideHoles.map((h) => (
                     <th
-                      key={`calc-${side}-${h}`}
-                      className="border-r border-emerald-700/50 px-2 py-2 text-center text-[0.65rem] font-bold uppercase tracking-wide last:border-r-0"
+                      key={`calc-hole-${side}-${h}`}
+                      className="border-r border-emerald-700/50 px-2 py-2 text-center font-mono text-[0.65rem] font-bold tabular-nums tracking-wide last:border-r-0"
                     >
                       {h}
                     </th>
@@ -128,6 +156,22 @@ export function VirtualDotsPreview({
                 </tr>
               </thead>
               <tbody>
+                <tr className="border-b border-emerald-900/15 bg-[#eef3e8]/90">
+                  <td className="border-r border-emerald-900/15 px-3 py-1.5 text-xs font-medium text-emerald-950">
+                    Stroke Index
+                  </td>
+                  <td className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs text-zinc-500">
+                    —
+                  </td>
+                  {data.sideHoles.map((h) => (
+                    <td
+                      key={`calc-si-${side}-${h}`}
+                      className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs tabular-nums text-emerald-900 last:border-r-0"
+                    >
+                      {data.strokeIndexByHole[h] ?? "—"}
+                    </td>
+                  ))}
+                </tr>
                 {data.players.map((p, idx) => (
                   <tr
                     key={`${side}-${p.id}`}

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { BackToScheduleButton } from "@/components/BackToScheduleButton";
 import { VirtualDotsPreview } from "@/components/VirtualDotsPreview";
-import { handicapFromScores, strokesReceivedOnHole } from "@/lib/scoring";
+import { effectiveHandicapForRound, handicapFromScores, strokesReceivedOnHole } from "@/lib/scoring";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +49,60 @@ type HandicapScoreRow = {
   created_at: string | null;
 };
 
+function buildVirtualDotsPreviewSides(
+  allCourse: CourseHoleRow[],
+  sumHcpA: number,
+  sumHcpB: number,
+  teamLabelA: string,
+  teamLabelB: string,
+  teamAId: string,
+  teamBId: string,
+) {
+  function netDotsForSide(side: "front" | "back") {
+    const sideHoles = side === "back" ? [10, 11, 12, 13, 14, 15, 16, 17, 18] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    const sideCourse = sideHoles
+      .map((hn) => allCourse.find((c) => c.hole_number === hn))
+      .filter((h): h is CourseHoleRow => Boolean(h))
+      .map((h) => ({ hole_number: h.hole_number, par: h.par, stroke_index: h.stroke_index }));
+    const strokeIndexByHole = new Map(sideCourse.map((h) => [h.hole_number, h.stroke_index]));
+
+    const perHole = sideHoles.map((hole) => {
+      const dotsA = strokesReceivedOnHole(sideCourse, sumHcpA, hole);
+      const dotsB = strokesReceivedOnHole(sideCourse, sumHcpB, hole);
+      const diff = Math.abs(dotsA - dotsB);
+      const team = dotsA === dotsB ? null : dotsA > dotsB ? teamLabelA : teamLabelB;
+      return { hole, diff, team };
+    });
+    const players = [
+      {
+        id: `combined-${teamAId}`,
+        name: `${teamLabelA} (team handicap)`,
+        team: teamLabelA,
+        handicap: sumHcpA,
+        dotsByHole: Object.fromEntries(
+          sideHoles.map((hole) => [hole, strokesReceivedOnHole(sideCourse, sumHcpA, hole)]),
+        ),
+      },
+      {
+        id: `combined-${teamBId}`,
+        name: `${teamLabelB} (team handicap)`,
+        team: teamLabelB,
+        handicap: sumHcpB,
+        dotsByHole: Object.fromEntries(
+          sideHoles.map((hole) => [hole, strokesReceivedOnHole(sideCourse, sumHcpB, hole)]),
+        ),
+      },
+    ].sort((a, b) => a.team.localeCompare(b.team));
+    return {
+      sideHoles,
+      strokeIndexByHole: Object.fromEntries(strokeIndexByHole.entries()),
+      perHole,
+      players,
+    };
+  }
+  return { front: netDotsForSide("front"), back: netDotsForSide("back") };
+}
+
 export default async function VirtualScorecardPage(props: { params: Promise<{ matchId: string }> }) {
   const { matchId } = await props.params;
   const supabase = await createServerSupabaseClient();
@@ -95,14 +149,19 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
   const whichNine = (distinctNines[0] ?? "front") as "front" | "back";
   const holes = whichNine === "back" ? [10, 11, 12, 13, 14, 15, 16, 17, 18] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-  const { data: course } = await supabase
+  const { data: courseAllRows, error: courseAllErr } = await supabase
     .from("course_holes")
     .select("hole_number, par, stroke_index")
-    .in("hole_number", holes)
+    .gte("hole_number", 1)
+    .lte("hole_number", 18)
     .order("hole_number", { ascending: true });
+  if (courseAllErr) return <p className="text-red-700">{courseAllErr.message}</p>;
+  const allCourseList = (courseAllRows ?? []) as CourseHoleRow[];
 
-  const parsByHole = new Map(((course ?? []) as CourseHoleRow[]).map((h) => [h.hole_number, h.par]));
-  const courseHoles = (course ?? []) as CourseHoleRow[];
+  const courseHoles = holes
+    .map((h) => allCourseList.find((c) => c.hole_number === h))
+    .filter((c): c is CourseHoleRow => Boolean(c));
+  const parsByHole = new Map(courseHoles.map((h) => [h.hole_number, h.par]));
   const strokeIndexByHole = new Map(courseHoles.map((h) => [h.hole_number, h.stroke_index]));
   const parTotal = holes.reduce((sum, h) => sum + (parsByHole.get(h) ?? 0), 0);
 
@@ -168,55 +227,17 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
       })
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    const { data: allCourseRows, error: allCourseErr } = await supabase
-      .from("course_holes")
-      .select("hole_number, stroke_index")
-      .gte("hole_number", 1)
-      .lte("hole_number", 18)
-      .order("hole_number", { ascending: true });
-    if (allCourseErr) return <p className="text-red-700">{allCourseErr.message}</p>;
-    const allCourse = (allCourseRows ?? []) as CourseHoleRow[];
-
-    function netDotsForSide(side: "front" | "back") {
-      const sideHoles = side === "back" ? [10, 11, 12, 13, 14, 15, 16, 17, 18] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
-      const sideCourse = sideHoles
-        .map((h) => allCourse.find((c) => c.hole_number === h))
-        .filter((h): h is CourseHoleRow => Boolean(h))
-        .map((h) => ({ hole_number: h.hole_number, par: 4, stroke_index: h.stroke_index }));
-      const strokeIndexByHole = new Map(sideCourse.map((h) => [h.hole_number, h.stroke_index]));
-
-      const perHole = sideHoles.map((hole) => {
-        const dotsA = preview
-          .filter((p) => p.team_id === teamAId)
-          .reduce((sum, p) => sum + strokesReceivedOnHole(sideCourse, p.handicap, hole), 0);
-        const dotsB = preview
-          .filter((p) => p.team_id === teamBId)
-          .reduce((sum, p) => sum + strokesReceivedOnHole(sideCourse, p.handicap, hole), 0);
-        const diff = Math.abs(dotsA - dotsB);
-        const team = dotsA === dotsB ? null : dotsA > dotsB ? teamLabelA : teamLabelB;
-        return { hole, diff, team };
-      });
-      const players = preview
-        .map((p) => ({
-          id: p.id,
-          name: p.name,
-          team: p.team_id === teamAId ? teamLabelA : teamLabelB,
-          teamSort: p.team_id === teamAId ? 0 : 1,
-          handicap: p.handicap,
-          dotsByHole: Object.fromEntries(
-            sideHoles.map((hole) => [hole, strokesReceivedOnHole(sideCourse, p.handicap, hole)]),
-          ),
-        }))
-        .sort((a, b) => {
-          if (a.teamSort !== b.teamSort) return a.teamSort - b.teamSort;
-          return a.name.localeCompare(b.name);
-        })
-        .map(({ teamSort: _teamSort, ...rest }) => rest);
-      return { sideHoles, strokeIndexByHole, perHole, players };
-    }
-
-    const front = netDotsForSide("front");
-    const back = netDotsForSide("back");
+    const sumHcpA = preview.filter((p) => p.team_id === teamAId).reduce((sum, p) => sum + p.handicap, 0);
+    const sumHcpB = preview.filter((p) => p.team_id === teamBId).reduce((sum, p) => sum + p.handicap, 0);
+    const { front: dotsFront, back: dotsBack } = buildVirtualDotsPreviewSides(
+      allCourseList,
+      sumHcpA,
+      sumHcpB,
+      teamLabelA,
+      teamLabelB,
+      teamAId,
+      teamBId,
+    );
 
     return (
       <div className="space-y-5">
@@ -227,22 +248,13 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
               Virtual scorecard: {teamLabelA} vs {teamLabelB}
             </h1>
             <p className="text-xs text-emerald-900/75">
-              No round submissions yet. Showing projected team net dots from current handicaps.
+              No round submissions yet. Showing projected net dots from combined team handicaps (strokes allocated once per
+              team from the sum of partners).
             </p>
           </div>
           <VirtualDotsPreview
-            front={{
-              sideHoles: front.sideHoles,
-              strokeIndexByHole: Object.fromEntries(front.strokeIndexByHole.entries()),
-              perHole: front.perHole,
-              players: front.players,
-            }}
-            back={{
-              sideHoles: back.sideHoles,
-              strokeIndexByHole: Object.fromEntries(back.strokeIndexByHole.entries()),
-              perHole: back.perHole,
-              players: back.players,
-            }}
+            front={dotsFront}
+            back={dotsBack}
           />
         </div>
       </div>
@@ -272,7 +284,8 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
     const rows = hhByPlayer[r.player_id] ?? [];
     handicapByRoundId.set(
       r.id,
-      handicapFromScores(
+      effectiveHandicapForRound(
+        r.handicap_at_submission,
         rows.map((x) => ({
           played_date: x.played_date,
           score: Number(x.score),
@@ -293,8 +306,20 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
     }
   }
 
+  const teamHcpA = rowsA.reduce((sum, r) => sum + (handicapByRoundId.get(r.id) ?? 0), 0);
+  const teamHcpB = rowsB.reduce((sum, r) => sum + (handicapByRoundId.get(r.id) ?? 0), 0);
+
   const teamLabelA = teamName.get(teamAId) ?? "Team A";
   const teamLabelB = teamName.get(teamBId) ?? "Team B";
+  const submittedDotsPreview = buildVirtualDotsPreviewSides(
+    allCourseList,
+    teamHcpA,
+    teamHcpB,
+    teamLabelA,
+    teamLabelB,
+    teamAId,
+    teamBId,
+  );
   const rosterA = playerRows
     .filter((p) => p.team_id === teamAId && p.is_league_member)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -313,8 +338,8 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
   const holeSummaries = holes.map((hole) => {
     const grossA = rowsA.reduce((sum, r) => sum + (strokesByRoundHole.get(`${r.id}:${hole}`) ?? 0), 0);
     const grossB = rowsB.reduce((sum, r) => sum + (strokesByRoundHole.get(`${r.id}:${hole}`) ?? 0), 0);
-    const dotsA = rowsA.reduce((sum, r) => sum + (dotsByRoundHole.get(`${r.id}:${hole}`) ?? 0), 0);
-    const dotsB = rowsB.reduce((sum, r) => sum + (dotsByRoundHole.get(`${r.id}:${hole}`) ?? 0), 0);
+    const dotsA = strokesReceivedOnHole(courseHoles, teamHcpA, hole);
+    const dotsB = strokesReceivedOnHole(courseHoles, teamHcpB, hole);
     const netA = grossA - dotsA;
     const netB = grossB - dotsB;
     const netDotDiff = Math.abs(dotsA - dotsB);
@@ -473,7 +498,8 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
         <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2">
           <h2 className="text-sm font-semibold text-emerald-950">Dots and combined-net by hole</h2>
           <p className="text-xs text-emerald-900/75">
-            Only net dots are shown (difference between team dots). Combined gross is shown, but winner bolding still uses net after dots.
+            Team dots use one stroke allocation per team from combined partner handicaps (not per-player dots summed).
+            Combined gross is shown; hole winners use net after those team dots.
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -560,6 +586,22 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
         </div>
       </div>
       ) : null}
+
+      <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
+        <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2">
+          <h2 className="text-sm font-semibold text-emerald-950">How team dots are calculated</h2>
+          <p className="text-xs text-emerald-900/75">
+            Combined partner handicaps for this match
+            {submittedCount >= 4 ? " (from submission snapshots)." : " (from rounds submitted so far)."} Front and back
+            nines show where strokes fall using those totals; expand for per-hole detail.
+          </p>
+        </div>
+        <VirtualDotsPreview
+          front={submittedDotsPreview.front}
+          back={submittedDotsPreview.back}
+          initialNine={whichNine}
+        />
+      </div>
     </div>
   );
 }
