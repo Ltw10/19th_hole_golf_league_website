@@ -30,8 +30,9 @@ export type LooseNumberInputProps = Base & {
 };
 
 /**
- * Text + numeric keypad input that always shows a number (never an empty field).
- * Invalid or cleared input snaps the display back to the current `value`; edits commit on blur.
+ * Text + numeric keypad input. While focused you can clear the field to type a new value.
+ * On blur, empty or invalid text reverts the display to the last committed `value` (no `onValueChange`).
+ * Valid numbers commit on blur (clamped to min/max when set).
  */
 export function LooseNumberInput({
   value,
@@ -79,7 +80,12 @@ export function LooseNumberInput({
       onBlur={(e) => {
         focused.current = false;
         const parsed = parseRaw(text);
-        const next = parsed == null ? value : clamp(parsed, min, max);
+        if (parsed == null) {
+          setText(formatNumber(value, allowDecimal));
+          onBlur?.(e);
+          return;
+        }
+        const next = clamp(parsed, min, max);
         onValueChange(next);
         setText(formatNumber(next, allowDecimal));
         onBlur?.(e);
@@ -87,17 +93,9 @@ export function LooseNumberInput({
       onChange={(e) => {
         const v = e.target.value;
         if (allowDecimal) {
-          if (v === "") {
-            setText(formatNumber(value, allowDecimal));
-            return;
-          }
-          if (/^\d*\.?\d*$/.test(v)) setText(v);
+          if (v === "" || /^\d*\.?\d*$/.test(v)) setText(v);
         } else {
-          if (v === "") {
-            setText(formatNumber(value, allowDecimal));
-            return;
-          }
-          if (/^\d+$/.test(v)) setText(v);
+          if (v === "" || /^\d+$/.test(v)) setText(v);
         }
       }}
     />
