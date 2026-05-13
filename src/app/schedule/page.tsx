@@ -3,7 +3,7 @@ import { SkinsWeekDetailButton, type SkinsWeekDetail } from "@/components/SkinsW
 import { ScrollToScheduleAnchor } from "@/components/ScrollToScheduleAnchor";
 import { SupabaseConnectionHelp } from "@/components/SupabaseConnectionHelp";
 import { formatSeasonPhase } from "@/lib/nhgl";
-import { formatPointsDisplay, handicapFromScores, strokesReceivedOnHole } from "@/lib/scoring";
+import { formatLeaguePointValue, formatPointsDisplay, handicapFromScores, strokesReceivedOnHole } from "@/lib/scoring";
 import { currentScheduleWeekId, SCHEDULE_CURRENT_WEEK_ANCHOR } from "@/lib/schedule";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -30,9 +30,12 @@ type ScoreRow = {
   scorecard_image_url: string | null;
 };
 
-/** Match | Pts | Players in | Card — Pts column sized for half-point scores (e.g. 2.5 - 7.5) */
-const MATCH_TABLE_GRID =
-  "grid w-full grid-cols-[minmax(0,1fr)_5.75rem_4rem_8.5rem] sm:grid-cols-[minmax(0,1fr)_6.25rem_4.5rem_10.5rem]";
+/** Desktop only: Match | Pts | In | Card — Pts column sized for half-point scores (e.g. 2.5 - 7.5) */
+const MATCH_HEADER_DESKTOP =
+  "hidden sm:grid sm:w-full sm:grid-cols-[minmax(0,1fr)_6.25rem_4.5rem_10.5rem] sm:items-stretch sm:border-b sm:border-emerald-900/20 sm:bg-[#eef3e8]/90 sm:px-2";
+
+const MATCH_ROW_DESKTOP =
+  "hidden sm:grid sm:w-full sm:grid-cols-[minmax(0,1fr)_6.25rem_4.5rem_10.5rem] sm:items-center sm:px-2 sm:py-0";
 
 const scorecardShell =
   "overflow-hidden rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]";
@@ -408,95 +411,39 @@ export default async function SchedulePage() {
                   </p>
                 ) : (
                   <div className="border-t border-emerald-900/15">
-                    <ul
-                      className={`${MATCH_TABLE_GRID} border-b border-emerald-900/20 bg-[#eef3e8]/90 px-2`}
-                    >
-                      <li className="border-r border-emerald-900/15 py-1.5 pr-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:text-[0.65rem] sm:tracking-[0.14em]">
+                    <div className="border-b border-emerald-900/20 bg-[#eef3e8]/90 px-3 py-2 sm:hidden">
+                      <p className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-emerald-900/75">
+                        Matches
+                      </p>
+                    </div>
+                    <div className={MATCH_HEADER_DESKTOP}>
+                      <div className="flex items-center border-r border-emerald-900/15 py-2 pr-2 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:px-3 sm:py-2.5 sm:text-[0.65rem] sm:tracking-[0.14em]">
                         Match
-                      </li>
-                      <li className="flex items-center justify-center border-r border-emerald-900/15 py-1.5 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:text-[0.65rem] sm:tracking-[0.14em]">
+                      </div>
+                      <div className="flex items-center justify-center border-r border-emerald-900/15 py-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:text-[0.65rem] sm:tracking-[0.14em]">
                         Pts
-                      </li>
-                      <li className="flex items-center justify-center border-r border-emerald-900/15 py-1.5 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:text-[0.65rem] sm:tracking-[0.14em]">
+                      </div>
+                      <div className="flex items-center justify-center border-r border-emerald-900/15 py-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:text-[0.65rem] sm:tracking-[0.14em]">
                         In
-                      </li>
-                      <li className="flex min-w-0 items-center justify-center py-1.5 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:text-[0.65rem] sm:tracking-[0.14em]">
+                      </div>
+                      <div className="flex min-w-0 items-center justify-center py-2 text-[0.6rem] font-bold uppercase tracking-[0.12em] text-emerald-900/75 sm:text-[0.65rem] sm:tracking-[0.14em]">
                         Card
-                      </li>
-                    </ul>
-                    <ul>
+                      </div>
+                    </div>
+                    <ul className="max-sm:border-t max-sm:border-emerald-900/10">
                       {ms.map((m, idx) => {
                         const submitted = scoresByMatchId.get(m.id);
                         const n = submissionCountByMatch.get(m.id) ?? 0;
                         return (
-                          <li
+                          <ScheduleMatchRow
                             key={m.id}
-                            className={`${MATCH_TABLE_GRID} items-center border-b border-emerald-900/15 px-2 py-1.5 text-sm last:border-b-0 sm:py-0 ${
-                              idx % 2 === 1 ? "sm:bg-[#f3f0e6]/70" : "sm:bg-[#faf8f0]"
-                            }`}
-                          >
-                            <span className="min-w-0 border-r border-emerald-900/15 py-0.5 pr-2 text-[0.8125rem] font-medium leading-snug text-emerald-950 sm:px-3 sm:py-2.5 sm:text-sm">
-                              {formatMatchup(m.team_a_id, m.team_b_id, teamMap)}
-                            </span>
-                            <div className="flex items-center justify-center border-r border-emerald-900/15 sm:px-2 sm:py-2.5">
-                              {submitted ? (
-                                <span className="whitespace-nowrap font-mono text-xs font-semibold tabular-nums text-emerald-950 sm:text-sm">
-                                  {formatPointsDisplay(submitted.a, submitted.b)}
-                                </span>
-                              ) : (
-                                <span className="font-mono text-sm text-emerald-800/35 sm:text-base">—</span>
-                              )}
-                            </div>
-                            <div className="flex items-center justify-center border-r border-emerald-900/15 sm:px-1 sm:py-2.5">
-                              {m.team_a_id && m.team_b_id ? (
-                                <span
-                                  className={`rounded-sm px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums sm:text-xs ${
-                                    n >= 4
-                                      ? "bg-emerald-100 text-emerald-950"
-                                      : n > 0
-                                        ? "bg-amber-100 text-amber-950"
-                                        : "bg-zinc-100 text-zinc-600"
-                                  }`}
-                                >
-                                  {n}/4
-                                </span>
-                              ) : (
-                                <span className="text-zinc-400">—</span>
-                              )}
-                            </div>
-                            <div className="flex min-w-0 items-center justify-center sm:px-3 sm:py-2">
-                              {m.team_a_id && m.team_b_id ? (
-                                <div className="flex flex-wrap items-center justify-center gap-1.5">
-                                  {submitted || highlightedWeekId === w.id || n > 0 ? (
-                                    <Link
-                                      href={`/schedule/virtual-scorecard/${encodeURIComponent(m.id)}`}
-                                      className="shrink-0 whitespace-nowrap rounded-sm border border-emerald-800/25 bg-white px-2 py-1 text-xs font-medium text-emerald-900 shadow-sm hover:bg-[#f4f1e8] sm:px-2.5"
-                                    >
-                                      View virtual
-                                    </Link>
-                                  ) : null}
-                                  {submitted?.scorecardImageUrl ? (
-                                    <a
-                                      href={submitted.scorecardImageUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="shrink-0 whitespace-nowrap rounded-sm border border-emerald-800/25 bg-white px-2 py-1 text-xs font-medium text-emerald-900 shadow-sm hover:bg-[#f4f1e8] sm:px-2.5"
-                                    >
-                                      View card
-                                    </a>
-                                  ) : null}
-                                  {!submitted ? (
-                                    <Link
-                                      href={`/submit-round?match=${encodeURIComponent(m.id)}`}
-                                      className="shrink-0 rounded-sm border-2 border-emerald-800/40 bg-emerald-900 px-2 py-1.5 text-[0.65rem] font-semibold leading-none text-[#f5f2e8] shadow-sm hover:bg-emerald-950 sm:px-2.5 sm:py-1 sm:text-xs"
-                                    >
-                                      Enter
-                                    </Link>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                            </div>
-                          </li>
+                            m={m}
+                            idx={idx}
+                            teamMap={teamMap}
+                            submitted={submitted}
+                            submissionCount={n}
+                            highlightWeek={highlightedWeekId === w.id}
+                          />
                         );
                       })}
                     </ul>
@@ -588,6 +535,130 @@ export default async function SchedulePage() {
         </ul>
       )}
     </div>
+  );
+}
+
+type ScheduleMatchSubmitted = {
+  a: number;
+  b: number;
+  scorecardImageUrl: string | null;
+};
+
+function ScheduleMatchRow({
+  m,
+  idx,
+  teamMap,
+  submitted,
+  submissionCount,
+  highlightWeek,
+}: {
+  m: Match;
+  idx: number;
+  teamMap: Map<string, string>;
+  submitted: ScheduleMatchSubmitted | undefined;
+  submissionCount: number;
+  highlightWeek: boolean;
+}) {
+  const matchup = formatMatchup(m.team_a_id, m.team_b_id, teamMap);
+  const stripe = idx % 2 === 1 ? "bg-[#f3f0e6]/70" : "bg-[#faf8f0]";
+
+  const teamAName = m.team_a_id ? teamMap.get(m.team_a_id) ?? "—" : "—";
+  const teamBName = m.team_b_id ? teamMap.get(m.team_b_id) ?? "—" : "—";
+
+  const pts = submitted ? (
+    <span className="whitespace-nowrap font-mono text-xs font-semibold tabular-nums text-emerald-950 sm:text-sm">
+      {formatPointsDisplay(submitted.a, submitted.b)}
+    </span>
+  ) : (
+    <span className="font-mono text-sm text-emerald-800/35 sm:text-base">—</span>
+  );
+
+  const ins =
+    m.team_a_id && m.team_b_id ? (
+      <span
+        className={`rounded-sm px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums sm:text-xs ${
+          submissionCount >= 4
+            ? "bg-emerald-100 text-emerald-950"
+            : submissionCount > 0
+              ? "bg-amber-100 text-amber-950"
+              : "bg-zinc-100 text-zinc-600"
+        }`}
+      >
+        {submissionCount}/4
+      </span>
+    ) : (
+      <span className="text-zinc-400">—</span>
+    );
+
+  const actions =
+    m.team_a_id && m.team_b_id ? (
+      <div className="flex flex-wrap items-center justify-center gap-1.5 max-sm:justify-start sm:justify-center">
+        {submitted || highlightWeek || submissionCount > 0 ? (
+          <Link
+            href={`/schedule/virtual-scorecard/${encodeURIComponent(m.id)}`}
+            className="shrink-0 whitespace-nowrap rounded-sm border border-emerald-800/25 bg-white px-2 py-1 text-xs font-medium text-emerald-900 shadow-sm hover:bg-[#f4f1e8] sm:px-2.5"
+          >
+            View virtual
+          </Link>
+        ) : null}
+        {submitted?.scorecardImageUrl ? (
+          <a
+            href={submitted.scorecardImageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 whitespace-nowrap rounded-sm border border-emerald-800/25 bg-white px-2 py-1 text-xs font-medium text-emerald-900 shadow-sm hover:bg-[#f4f1e8] sm:px-2.5"
+          >
+            View card
+          </a>
+        ) : null}
+        {!submitted ? (
+          <Link
+            href={`/submit-round?match=${encodeURIComponent(m.id)}`}
+            className="shrink-0 rounded-sm border-2 border-emerald-800/40 bg-emerald-900 px-2 py-1.5 text-[0.65rem] font-semibold leading-none text-[#f5f2e8] shadow-sm hover:bg-emerald-950 sm:px-2.5 sm:py-1 sm:text-xs"
+          >
+            Enter
+          </Link>
+        ) : null}
+      </div>
+    ) : null;
+
+  return (
+    <li
+      className={`border-b border-emerald-900/15 last:border-b-0 text-sm ${stripe}`}
+    >
+      <div className="sm:hidden px-3 py-3">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5">
+          <div className="text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-emerald-900/70">Teams</div>
+          <div className="text-right text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-emerald-900/70">
+            Pts
+          </div>
+          <div className="min-w-0 text-sm font-medium leading-snug text-emerald-950">{teamAName}</div>
+          <div className="border-l border-emerald-900/15 pl-3 text-right font-mono text-sm font-semibold tabular-nums text-emerald-950">
+            {submitted ? formatLeaguePointValue(submitted.a) : "—"}
+          </div>
+          <div className="min-w-0 text-sm font-medium leading-snug text-emerald-950">{teamBName}</div>
+          <div className="border-l border-emerald-900/15 pl-3 text-right font-mono text-sm font-semibold tabular-nums text-emerald-950">
+            {submitted ? formatLeaguePointValue(submitted.b) : "—"}
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-emerald-900/10 pt-3">
+          <span className="text-xs text-zinc-700">
+            <span className="mr-1.5 font-semibold uppercase tracking-wide text-emerald-900/75">In</span>
+            {ins}
+          </span>
+          {actions}
+        </div>
+      </div>
+
+      <div className={`${MATCH_ROW_DESKTOP} items-center text-sm`}>
+        <span className="min-w-0 border-r border-emerald-900/15 px-3 py-2.5 text-sm font-medium leading-snug text-emerald-950">
+          {matchup}
+        </span>
+        <div className="flex items-center justify-center border-r border-emerald-900/15 px-2 py-2.5">{pts}</div>
+        <div className="flex items-center justify-center border-r border-emerald-900/15 px-1 py-2.5">{ins}</div>
+        <div className="flex min-w-0 items-center justify-center px-3 py-2">{actions}</div>
+      </div>
+    </li>
   );
 }
 

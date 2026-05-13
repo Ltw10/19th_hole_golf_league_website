@@ -91,13 +91,17 @@ export function holeNet(
   return strokes - str;
 }
 
+/** One team's league points (half-point allowed). */
+export function formatLeaguePointValue(n: unknown): string {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  const r = Math.round(x * 100) / 100;
+  return r % 1 === 0 ? String(r) : r.toFixed(1);
+}
+
 export function formatPointsDisplay(a: number, b: number): string {
-  const fa = Number(a);
-  const fb = Number(b);
-  if (!Number.isFinite(fa) || !Number.isFinite(fb)) return "—";
-  const fmt = (n: number) => {
-    const r = Math.round(n * 100) / 100;
-    return r % 1 === 0 ? String(r) : r.toFixed(1);
-  };
-  return `${fmt(fa)} · ${fmt(fb)}`;
+  const aS = formatLeaguePointValue(a);
+  const bS = formatLeaguePointValue(b);
+  if (aS === "—" || bS === "—") return "—";
+  return `${aS} · ${bS}`;
 }
