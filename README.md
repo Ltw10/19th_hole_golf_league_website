@@ -79,11 +79,6 @@ Next.js app for schedule, regular-season standings, public score and skins entry
 
 - All skins participants for that week: handicaps, gross and net per hole, pot summary, and alignment with schedule skins highlights.
 
-### Deprecated (fallback only)
-
-- **`/submit-scores`** — legacy matchup form (10-point split + optional scorecard) into `nhgl.score_submissions`; points users to Submit round.
-- **`/submit-skins`** — legacy weekly skins RPC `nhgl.submit_skins_week`; points users to Submit round.
-
 ### Admin (`/admin/scores`, `NHGL_ADMIN_SECRET`)
 
 - Secret-gated **tool menu** after load (one task at a time).
