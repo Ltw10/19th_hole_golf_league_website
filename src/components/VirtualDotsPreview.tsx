@@ -84,10 +84,10 @@ export function VirtualDotsPreview({
           </thead>
           <tbody>
             <tr className="border-b border-emerald-900/15 bg-[#eef3e8]/90">
-              <td className="border-r border-emerald-900/15 px-3 py-1.5 text-xs font-medium text-emerald-950">HCP</td>
+              <td className="border-r border-emerald-900/15 px-3 py-1.5 text-xs font-medium text-emerald-950">Stroke index</td>
               {data.sideHoles.map((h) => (
                 <td
-                  key={`${side}-hcp-${h}`}
+                  key={`${side}-si-${h}`}
                   className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs text-emerald-900 last:border-r-0"
                 >
                   {data.strokeIndexByHole[h] ?? "-"}

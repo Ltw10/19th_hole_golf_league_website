@@ -13,7 +13,7 @@ CROSS JOIN generate_series(10, 18) AS gs(n)
 WHERE c.name = 'Hickory Sticks'
 ON CONFLICT (course_id, hole_number) DO NOTHING;
 
--- Replace stroke helper: handicap strokes apply within the nine holes played (SI ranked within that side).
+-- Replace stroke helper: handicap strokes apply within the nine holes played (stroke index ranked within that side).
 DROP FUNCTION IF EXISTS nhgl._strokes_received_on_hole(uuid, int, int);
 
 CREATE OR REPLACE FUNCTION nhgl._strokes_received_on_hole(

@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { LooseNumberInput } from "@/components/LooseNumberInput";
 import { formatSeasonPhase, SCORECARDS_BUCKET } from "@/lib/nhgl";
 import {
   handicapFromScores,
@@ -20,6 +21,140 @@ type Match = {
   team_a_id: string | null;
   team_b_id: string | null;
 };
+
+const HOLE_STROKE_MIN = 1;
+const HOLE_STROKE_MAX = 20;
+
+/** Gross options shown in the tap sheet: 1 through double par (per hole). */
+function strokeOptionsForPar(par: number): number[] {
+  const p = Math.max(1, Math.round(par));
+  const max = Math.max(HOLE_STROKE_MIN, 2 * p);
+  return Array.from({ length: max }, (_, i) => i + 1);
+}
+
+/**
+ * Visual encoding vs par: ace & eagle+ double circle, birdie circle, par plain,
+ * bogey square, double bogey+ double square (aligned with league scorecard legend).
+ */
+function strokeScoreShapeClass(strokes: number, par: number): string {
+  const base =
+    "inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-base font-semibold tabular-nums text-emerald-950 shadow-sm sm:min-h-[48px] sm:min-w-[48px] sm:text-lg ";
+  const diff = strokes - par;
+  if (strokes === 1 || strokes <= par - 2) {
+    return (
+      base +
+      "rounded-full border-2 border-emerald-900 bg-white outline outline-1 outline-offset-[3px] outline-emerald-800/55"
+    );
+  }
+  if (diff === -1) {
+    return base + "rounded-full border-2 border-emerald-900 bg-white";
+  }
+  if (diff === 0) {
+    return base + "rounded-md border border-zinc-400 bg-white";
+  }
+  if (diff === 1) {
+    return base + "rounded-sm border-2 border-zinc-800 bg-white";
+  }
+  return (
+    base +
+    "rounded-sm border-2 border-zinc-800 bg-white outline outline-1 outline-offset-[2px] outline-zinc-600"
+  );
+}
+
+/** Selected tap in stroke sheet — matches skins scorecard “won a skin” hole highlight. */
+const STROKE_SHEET_SELECTED_CLASSES =
+  "relative z-[1] !bg-amber-300 !font-black !text-emerald-950 !shadow-[0_0_0_2px_#92400e,0_3px_12px_rgba(146,64,14,0.55)] outline-none";
+
+function StrokeSheetModal({
+  holes,
+  strokes,
+  onPick,
+  onClose,
+}: {
+  holes: CourseHole[];
+  strokes: number[];
+  onPick: (idx: number, value: number) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+      role="presentation"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stroke-sheet-title"
+        className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-emerald-900/25 bg-[#faf8f0] shadow-2xl sm:max-h-[88vh] sm:rounded-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-emerald-900/20 bg-emerald-950 px-4 py-3 text-[#f2efe4]">
+          <h2 id="stroke-sheet-title" className="text-base font-semibold tracking-tight">
+            Choose gross scores
+          </h2>
+          <button
+            type="button"
+            className="min-h-[44px] shrink-0 rounded-md border border-emerald-700/60 bg-emerald-900/40 px-3 py-2 text-sm font-medium text-[#f2efe4] hover:bg-emerald-900/70"
+            onClick={onClose}
+          >
+            Done
+          </button>
+        </div>
+        <div className="space-y-5 p-4 pb-6">
+          {holes.map((hole, idx) => {
+            const par = hole.par;
+            const options = strokeOptionsForPar(par);
+            const current = strokes[idx] ?? par;
+            return (
+              <div key={hole.hole_number} className="rounded-lg border border-emerald-900/15 bg-white/80 px-3 py-3">
+                <p className="mb-2 text-sm font-semibold text-emerald-950">
+                  Hole <span className="font-mono tabular-nums">{hole.hole_number}</span>
+                  <span className="ml-2 font-normal text-zinc-600">Par {par}</span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {options.map((n) => {
+                    const selected = current === n;
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        className={`${strokeScoreShapeClass(n, par)}${
+                          selected ? ` ${STROKE_SHEET_SELECTED_CLASSES}` : ""
+                        }`}
+                        aria-pressed={selected}
+                        aria-label={`Hole ${hole.hole_number}, ${n} strokes`}
+                        onClick={() => onPick(idx, n)}
+                      >
+                        {n}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export type SubmitRoundFormProps = {
   weeks: Week[];
@@ -79,6 +214,7 @@ export function SubmitRoundForm({
   const [newSubName, setNewSubName] = useState("");
   const [addSubLoading, setAddSubLoading] = useState(false);
   const [addSubError, setAddSubError] = useState("");
+  const [strokeSheetOpen, setStrokeSheetOpen] = useState(false);
 
   const allPlayers = useMemo(() => {
     const byId = new Map<string, Player>();
@@ -457,6 +593,10 @@ export function SubmitRoundForm({
           {playerId && handicapByPlayer[playerId] !== undefined ? (
             <span className="text-zinc-400"> — roster summary {handicapByPlayer[playerId]}</span>
           ) : null}
+          <span className="mt-1 block text-zinc-600">
+            Enter gross in each box, or tap <span className="font-medium text-emerald-900">Choose scores</span> above
+            the card for tap targets. You can still type other values in the boxes.
+          </span>
         </p>
         {holesSorted.length < 9 ? (
           <p className="mt-2 text-sm text-amber-800">
@@ -464,10 +604,17 @@ export function SubmitRoundForm({
           </p>
         ) : (
           <div className="mt-3 overflow-hidden rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
-            <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2 text-center">
-              <span className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-emerald-900/65">
+            <div className="flex flex-col gap-2 border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+              <span className="text-center text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-emerald-900/65 sm:text-left">
                 Score entry card
               </span>
+              <button
+                type="button"
+                className="min-h-[44px] shrink-0 rounded-md border border-emerald-800/35 bg-emerald-800 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-900"
+                onClick={() => setStrokeSheetOpen(true)}
+              >
+                Choose scores
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[520px] border-collapse text-sm">
@@ -509,17 +656,16 @@ export function SubmitRoundForm({
                           {hole.stroke_index}
                         </td>
                         <td className="border-r border-emerald-900/15 px-2 py-2">
-                          <input
-                            type="number"
+                          <LooseNumberInput
                             required
-                            min={1}
-                            max={20}
-                            className="w-full min-w-[4rem] rounded border border-emerald-900/25 bg-white px-2 py-1.5 text-center font-mono tabular-nums text-emerald-950"
+                            min={HOLE_STROKE_MIN}
+                            max={HOLE_STROKE_MAX}
+                            className="w-full min-w-0 rounded border border-emerald-900/25 bg-white px-2 py-1.5 text-center font-mono tabular-nums text-emerald-950 sm:min-w-[4rem]"
                             value={g}
-                            onChange={(e) => {
-                              const n = [...strokes];
-                              n[idx] = Number(e.target.value);
-                              setStrokes(n);
+                            onValueChange={(n) => {
+                              const nxt = [...strokes];
+                              nxt[idx] = n;
+                              setStrokes(nxt);
                             }}
                           />
                         </td>
@@ -586,6 +732,21 @@ export function SubmitRoundForm({
       {message && (
         <p className={status === "ok" ? "text-emerald-800" : "text-red-700"}>{message}</p>
       )}
+
+      {strokeSheetOpen && holesSorted.length >= 9 ? (
+        <StrokeSheetModal
+          holes={holesSorted}
+          strokes={strokes}
+          onClose={() => setStrokeSheetOpen(false)}
+          onPick={(pickIdx, value) => {
+            setStrokes((prev) => {
+              const nxt = [...prev];
+              nxt[pickIdx] = value;
+              return nxt;
+            });
+          }}
+        />
+      ) : null}
     </form>
   );
 }

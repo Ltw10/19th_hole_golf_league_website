@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { SkinsWeekDetailButton, type SkinsWeekDetail } from "@/components/SkinsWeekDetailButton";
+import { ScrollToScheduleAnchor } from "@/components/ScrollToScheduleAnchor";
 import { SupabaseConnectionHelp } from "@/components/SupabaseConnectionHelp";
 import { formatSeasonPhase } from "@/lib/nhgl";
 import { formatPointsDisplay, handicapFromScores, strokesReceivedOnHole } from "@/lib/scoring";
-import { currentScheduleWeekId } from "@/lib/schedule";
+import { currentScheduleWeekId, SCHEDULE_CURRENT_WEEK_ANCHOR } from "@/lib/schedule";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -29,9 +30,9 @@ type ScoreRow = {
   scorecard_image_url: string | null;
 };
 
-/** Match | Pts | Players in | Card */
+/** Match | Pts | Players in | Card — Pts column sized for half-point scores (e.g. 2.5 - 7.5) */
 const MATCH_TABLE_GRID =
-  "grid w-full grid-cols-[minmax(0,1fr)_3.25rem_4rem_8.5rem] sm:grid-cols-[minmax(0,1fr)_4rem_4.5rem_10.5rem]";
+  "grid w-full grid-cols-[minmax(0,1fr)_5.75rem_4rem_8.5rem] sm:grid-cols-[minmax(0,1fr)_6.25rem_4.5rem_10.5rem]";
 
 const scorecardShell =
   "overflow-hidden rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]";
@@ -345,6 +346,7 @@ export default async function SchedulePage() {
 
   return (
     <div className="min-w-0 space-y-6">
+      <ScrollToScheduleAnchor />
       <div className="rounded-sm border-2 border-emerald-900/30 bg-[#f4f1e8] px-4 py-3 shadow-[3px_4px_0_0_rgba(6,60,45,0.12)]">
         <p className="text-center text-[0.65rem] font-semibold uppercase tracking-[0.35em] text-emerald-900/70">
           League schedule
@@ -370,9 +372,10 @@ export default async function SchedulePage() {
             return (
               <li
                 key={w.id}
+                id={highlightedWeekId === w.id ? SCHEDULE_CURRENT_WEEK_ANCHOR : undefined}
                 className={
                   highlightedWeekId === w.id
-                    ? "relative z-[1] overflow-hidden rounded-sm border-2 border-amber-700/90 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)] outline outline-2 outline-offset-2 outline-amber-700/95"
+                    ? "relative z-[1] scroll-mt-24 overflow-hidden rounded-sm border-2 border-amber-700/90 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)] outline outline-2 outline-offset-2 outline-amber-700/95 sm:scroll-mt-28"
                     : "overflow-hidden rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]"
                 }
               >
@@ -437,7 +440,7 @@ export default async function SchedulePage() {
                             </span>
                             <div className="flex items-center justify-center border-r border-emerald-900/15 sm:px-2 sm:py-2.5">
                               {submitted ? (
-                                <span className="font-mono text-xs font-semibold tabular-nums text-emerald-950 sm:text-sm">
+                                <span className="whitespace-nowrap font-mono text-xs font-semibold tabular-nums text-emerald-950 sm:text-sm">
                                   {formatPointsDisplay(submitted.a, submitted.b)}
                                 </span>
                               ) : (
@@ -505,10 +508,18 @@ export default async function SchedulePage() {
                       <span className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-emerald-900/65">
                         Skins · Week {w.week_number}
                       </span>
-                      <SkinsWeekDetailButton
-                        weekLabel={`Week ${w.week_number} (${w.week_date})`}
-                        detail={skinsDetailByWeek.get(w.id) ?? null}
-                      />
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                        <SkinsWeekDetailButton
+                          weekLabel={`Week ${w.week_number} (${w.week_date})`}
+                          detail={skinsDetailByWeek.get(w.id) ?? null}
+                        />
+                        <Link
+                          href={`/schedule/skins-scorecard/${encodeURIComponent(w.id)}`}
+                          className="rounded-sm border border-emerald-800/25 bg-white px-2 py-1 text-xs font-medium text-emerald-900 shadow-sm hover:bg-[#f4f1e8]"
+                        >
+                          View skins scorecard
+                        </Link>
+                      </div>
                     </div>
                   </div>
                   <div className="px-3 py-2 text-xs text-emerald-900/80">

@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SCHEDULE_CURRENT_WEEK_ANCHOR } from "@/lib/schedule";
 
 const links = [
-  { href: "/schedule", label: "Schedule" },
+  { href: `/schedule#${SCHEDULE_CURRENT_WEEK_ANCHOR}`, label: "Schedule" },
   { href: "/standings", label: "Standings" },
   { href: "/submit-round", label: "Submit Round" },
   { href: "/handicap-helper", label: "Handicap Helper" },

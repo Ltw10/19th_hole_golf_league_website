@@ -4,6 +4,9 @@
  * After that Tuesday passes, Wednesday rolls forward to the following week.
  */
 
+/** Fragment for `/schedule#…` so nav and “back to schedule” scroll to the current week row. */
+export const SCHEDULE_CURRENT_WEEK_ANCHOR = "schedule-current-week";
+
 function leagueTimeZone(): string {
   return process.env.NHGL_LEAGUE_TIMEZONE?.trim() || "America/New_York";
 }

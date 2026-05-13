@@ -47,7 +47,7 @@ export async function GET(req: Request) {
       ascending: true,
     }),
     admin.from("teams").select("id, name"),
-    admin.from("players").select("id, name").order("name", { ascending: true }),
+    admin.from("players").select("id, name, team_id").order("name", { ascending: true }),
     admin
       .from("handicap_helper_scores")
       .select("id, player_id, played_date, score, par, created_at")
@@ -62,6 +62,67 @@ export async function GET(req: Request) {
   if (pListErr) return NextResponse.json({ error: pListErr.message }, { status: 500 });
   if (hErr) return NextResponse.json({ error: hErr.message }, { status: 500 });
   if (prErr) return NextResponse.json({ error: prErr.message }, { status: 500 });
+
+  const matchIds = [
+    ...new Set((rawRows as SubmissionRow[] | null)?.map((r) => r.match_id as string).filter(Boolean) ?? []),
+  ];
+  const matchPlayerRounds: Record<
+    string,
+    {
+      id: string;
+      week_id: string;
+      match_id: string;
+      player_id: string;
+      player_name: string;
+      played_for_team_id: string;
+      team_name: string;
+      played_skins: boolean;
+      which_nine: string | null;
+      handicap_at_submission: number | null;
+      holes: { hole_number: number; strokes: number }[];
+    }[]
+  > = {};
+
+  if (matchIds.length > 0) {
+    const { data: prRows, error: prFetchErr } = await admin
+      .from("player_rounds")
+      .select(
+        "id, week_id, match_id, player_id, played_for_team_id, played_skins, which_nine, handicap_at_submission, player_hole_scores(hole_number, strokes)",
+      )
+      .in("match_id", matchIds);
+    if (prFetchErr) return NextResponse.json({ error: prFetchErr.message }, { status: 500 });
+
+    const allPlayerNameById = new Map((players ?? []).map((p) => [p.id as string, p.name as string]));
+    const teamMapForRounds = new Map((teams ?? []).map((t) => [t.id as string, t.name as string]));
+
+    for (const pr of prRows ?? []) {
+      const mid = pr.match_id as string;
+      const pid = pr.player_id as string;
+      const holesRaw = (pr as { player_hole_scores?: { hole_number: number; strokes: number }[] | null })
+        .player_hole_scores;
+      const holes = [...(holesRaw ?? [])].sort((a, b) => a.hole_number - b.hole_number);
+      const entry = {
+        id: pr.id as string,
+        week_id: pr.week_id as string,
+        match_id: mid,
+        player_id: pid,
+        player_name: allPlayerNameById.get(pid) ?? "Unknown player",
+        played_for_team_id: pr.played_for_team_id as string,
+        team_name: teamMapForRounds.get(pr.played_for_team_id as string) ?? "?",
+        played_skins: Boolean(pr.played_skins),
+        which_nine: (pr.which_nine as string | null) ?? null,
+        handicap_at_submission:
+          pr.handicap_at_submission == null ? null : Number(pr.handicap_at_submission as number),
+        holes,
+      };
+      const list = matchPlayerRounds[mid] ?? [];
+      list.push(entry);
+      matchPlayerRounds[mid] = list;
+    }
+    for (const mid of Object.keys(matchPlayerRounds)) {
+      matchPlayerRounds[mid]!.sort((a, b) => a.player_name.localeCompare(b.player_name, undefined, { sensitivity: "base" }));
+    }
+  }
 
   const teamMap = new Map((teams ?? []).map((t) => [t.id as string, t.name as string]));
   const weekMap = new Map(
@@ -122,5 +183,19 @@ export async function GET(req: Request) {
     handicap_at_submission: snapshotByPlayerDate.get(`${row.player_id}:${row.played_date}`) ?? null,
   }));
 
-  return NextResponse.json({ data: data ?? [], weeks: weeks ?? [], handicap_scores: handicap_scores ?? [], players: players ?? [] });
+  const teamNameById = new Map((teams ?? []).map((t) => [t.id as string, t.name as string]));
+  const playersWithTeam = (players ?? []).map((p) => ({
+    id: p.id as string,
+    name: p.name as string,
+    team_id: p.team_id as string,
+    team_name: teamNameById.get(p.team_id as string) ?? "Unknown team",
+  }));
+
+  return NextResponse.json({
+    data: data ?? [],
+    weeks: weeks ?? [],
+    handicap_scores: handicap_scores ?? [],
+    players: playersWithTeam,
+    match_player_rounds: matchPlayerRounds,
+  });
 }

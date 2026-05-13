@@ -40,9 +40,6 @@ export function SkinsWeekDetailButton({
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-emerald-900/20 bg-[#e8efe3] px-4 py-3">
               <div>
                 <h3 className="text-sm font-semibold text-emerald-950">Skins details - {weekLabel}</h3>
-                <p className="text-xs text-emerald-900/75">
-                  Low net score per hole across skins players. Result shows Skin or Tie.
-                </p>
               </div>
               <button
                 type="button"

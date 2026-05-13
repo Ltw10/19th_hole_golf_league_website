@@ -12,14 +12,9 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0c120f;
-    --foreground: #e8eee9;
-  }
-}
-
+/* App UI is light-only; without this, system dark mode makes native inputs/selects use dark text on our white fields. */
 html {
+  color-scheme: light;
   overflow-x: clip;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;

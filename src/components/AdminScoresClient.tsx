@@ -1,7 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LooseNullableIntInput, LooseNumberInput } from "@/components/LooseNumberInput";
 import { formatSeasonPhase } from "@/lib/nhgl";
+
+type PlayerRoundAdmin = {
+  id: string;
+  week_id: string;
+  match_id: string;
+  player_id: string;
+  player_name: string;
+  played_for_team_id: string;
+  team_name: string;
+  played_skins: boolean;
+  which_nine: string | null;
+  handicap_at_submission: number | null;
+  holes: { hole_number: number; strokes: number }[];
+};
+
+const EMPTY_PLAYER_ROUNDS: PlayerRoundAdmin[] = [];
+
+type MatchRoundsDraft = {
+  player_round_id: string;
+  played_skins: boolean;
+  holes: { hole_number: number; strokes: number }[];
+};
 
 type Row = {
   id: string;
@@ -33,6 +56,8 @@ type WeekOption = {
 type PlayerOption = {
   id: string;
   name: string;
+  team_id: string;
+  team_name: string;
 };
 
 type HandicapRow = {
@@ -112,9 +137,32 @@ function formatDate(iso: string) {
   });
 }
 
+function allowedNine(whichNine: string | null): number[] {
+  const side = whichNine?.toLowerCase() === "back" ? "back" : "front";
+  return side === "back" ? [10, 11, 12, 13, 14, 15, 16, 17, 18] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
+}
+
+function normalizeHolesDraft(
+  whichNine: string | null,
+  holes: { hole_number: number; strokes: number }[],
+): { hole_number: number; strokes: number }[] {
+  const allowed = allowedNine(whichNine);
+  const by = new Map(holes.map((h) => [h.hole_number, h.strokes]));
+  return allowed.map((hn) => ({ hole_number: hn, strokes: by.get(hn) ?? 4 }));
+}
+
+function buildMatchDrafts(rounds: PlayerRoundAdmin[]): MatchRoundsDraft[] {
+  return rounds.map((row) => ({
+    player_round_id: row.id,
+    played_skins: row.played_skins,
+    holes: normalizeHolesDraft(row.which_nine, row.holes),
+  }));
+}
+
 export function AdminScoresClient() {
   const [secret, setSecret] = useState("");
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [matchPlayerRoundsByMatch, setMatchPlayerRoundsByMatch] = useState<Record<string, PlayerRoundAdmin[]>>({});
   const [handicapRows, setHandicapRows] = useState<HandicapRow[]>([]);
   const [players, setPlayers] = useState<PlayerOption[]>([]);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
@@ -123,6 +171,9 @@ export function AdminScoresClient() {
   const [selectedHandicapPlayerId, setSelectedHandicapPlayerId] = useState<string | null>(null);
   const [editingHandicapRowId, setEditingHandicapRowId] = useState<string | null>(null);
   const [deletingHandicapRowId, setDeletingHandicapRowId] = useState<string | null>(null);
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [draftPlayerName, setDraftPlayerName] = useState("");
+  const [savingPlayerId, setSavingPlayerId] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -134,6 +185,18 @@ export function AdminScoresClient() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [savingHoles, setSavingHoles] = useState(false);
   const [recomputingWeek, setRecomputingWeek] = useState(false);
+
+  type AdminTaskView =
+    | "menu"
+    | "championship"
+    | "skins-buyin"
+    | "course-holes"
+    | "recompute-week"
+    | "week-cleanup"
+    | "handicap-helper"
+    | "matchup-scores";
+
+  const [adminTaskView, setAdminTaskView] = useState<AdminTaskView>("menu");
 
   const authHeader = useCallback(() => {
     return { Authorization: `Bearer ${secret}` };
@@ -147,6 +210,7 @@ export function AdminScoresClient() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
       setRows(json.data as Row[]);
+      setMatchPlayerRoundsByMatch((json.match_player_rounds as Record<string, PlayerRoundAdmin[]> | undefined) ?? {});
       setHandicapRows((json.handicap_scores as HandicapRow[] | undefined) ?? []);
       setPlayers((json.players as PlayerOption[] | undefined) ?? []);
       setWeeks((json.weeks as WeekOption[] | undefined) ?? []);
@@ -185,9 +249,11 @@ export function AdminScoresClient() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
       setRows(null);
+      setMatchPlayerRoundsByMatch({});
       setHandicapRows([]);
       setPlayers([]);
       setWeeks([]);
+      setAdminTaskView("menu");
     } finally {
       setLoading(false);
     }
@@ -232,6 +298,32 @@ export function AdminScoresClient() {
       return;
     }
     await load();
+  }
+
+  async function savePlayerName(playerId: string) {
+    const trimmed = draftPlayerName.trim();
+    if (!trimmed) {
+      setErr("Name cannot be empty.");
+      return;
+    }
+    setSavingPlayerId(playerId);
+    setErr("");
+    try {
+      const res = await fetch(`/api/admin/players/${playerId}`, {
+        method: "PATCH",
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setErr(json.error ?? "Save failed");
+        return;
+      }
+      setEditingPlayerId(null);
+      await load();
+    } finally {
+      setSavingPlayerId(null);
+    }
   }
 
   async function recomputeWeek() {
@@ -304,15 +396,22 @@ export function AdminScoresClient() {
       });
   }, [handicapRows, selectedHandicapPlayerId]);
 
+  const selectedPlayerRoster = useMemo(
+    () => players.find((p) => p.id === selectedHandicapPlayerId) ?? null,
+    [players, selectedHandicapPlayerId],
+  );
+
   useEffect(() => {
     if (handicapSummary.length === 0) {
       setSelectedHandicapPlayerId(null);
       setEditingHandicapRowId(null);
+      setEditingPlayerId(null);
       return;
     }
     if (!selectedHandicapPlayerId || !handicapSummary.some((p) => p.player_id === selectedHandicapPlayerId)) {
       setSelectedHandicapPlayerId(handicapSummary[0]?.player_id ?? null);
       setEditingHandicapRowId(null);
+      setEditingPlayerId(null);
     }
   }, [handicapSummary, selectedHandicapPlayerId]);
 
@@ -423,241 +522,336 @@ export function AdminScoresClient() {
               className="w-full max-w-md rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-base"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                if (loading || !secret.trim()) return;
+                void load();
+              }}
               autoComplete="off"
             />
           </div>
           <button
             type="button"
-            onClick={load}
-            disabled={loading || !secret}
+            onClick={() => void load()}
+            disabled={loading || !secret.trim()}
             className="min-h-[44px] rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {loading ? "Loading…" : "Load submissions"}
+            {loading ? "Loading…" : "Enter"}
           </button>
         </div>
         {rows !== null ? (
           <div className="mt-4 w-full space-y-4 border-t border-amber-800/15 pt-4">
-            <div>
+            {adminTaskView !== "menu" ? (
               <button
                 type="button"
-                onClick={refreshChampionship}
-                disabled={loading || !secret}
-                className="rounded-md border border-emerald-800 bg-white px-4 py-2 text-sm font-medium text-emerald-900 disabled:opacity-50"
+                onClick={() => setAdminTaskView("menu")}
+                className="text-sm font-medium text-emerald-900 underline underline-offset-2 hover:text-emerald-950"
               >
-                Set championship to top 2
+                ← All tools
               </button>
-            </div>
-            <div className="rounded-md border border-zinc-200 bg-white/80 p-3 space-y-3">
-              <p className="text-sm font-medium text-zinc-900">Skins buy-in (each player)</p>
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
-                  Amount ($)
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    className="w-32 rounded border border-zinc-300 px-2 py-1.5 text-sm"
-                    value={skinsBuyinDraft}
-                    onChange={(e) => setSkinsBuyinDraft(e.target.value)}
-                  />
-                </label>
-                <button
-                  type="button"
-                  disabled={savingSettings || !secret}
-                  className="rounded-md bg-zinc-800 px-3 py-2 text-sm text-white disabled:opacity-50"
-                  onClick={() => void saveSkinsBuyin()}
-                >
-                  {savingSettings ? "Saving…" : "Save buy-in"}
-                </button>
-              </div>
-            </div>
-            <div className="rounded-md border border-zinc-200 bg-white/80 p-3 space-y-3">
-              <p className="text-sm font-medium text-zinc-900">Course holes</p>
-              <label className="block text-xs text-zinc-600">
-                Course
-                <select
-                  className="mt-1 block w-full max-w-md rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm"
-                  value={adminCourseId}
-                  onChange={async (e) => {
-                    const id = e.target.value;
-                    setAdminCourseId(id);
-                    const hr = await fetch(`/api/admin/courses/${encodeURIComponent(id)}`, {
-                      headers: authHeader(),
-                    });
-                    const hj = await hr.json();
-                    if (hr.ok && Array.isArray(hj.holes)) {
-                      setHoleDrafts(
-                        (hj.holes as { hole_number: number; par: number; stroke_index: number }[]).map((h) => ({
-                          hole_number: h.hole_number,
-                          par: String(h.par),
-                          stroke_index: String(h.stroke_index),
-                        })),
-                      );
-                    }
-                  }}
-                >
-                  {adminCourses.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {holeDrafts.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[320px] border-collapse text-sm">
-                    <thead>
-                      <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium text-zinc-700">
-                        <th className="px-2 py-1">Hole</th>
-                        <th className="px-2 py-1">Par</th>
-                        <th className="px-2 py-1">Stroke idx</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {holeDrafts.map((h, idx) => (
-                        <tr key={h.hole_number} className="border-b border-zinc-100">
-                          <td className="px-2 py-1 font-mono">{h.hole_number}</td>
-                          <td className="px-2 py-1">
-                            <input
-                              type="number"
-                              min={3}
-                              max={6}
-                              className="w-16 rounded border border-zinc-300 px-1 py-0.5"
-                              value={h.par}
-                              onChange={(e) => {
-                                const next = [...holeDrafts];
-                                next[idx] = { ...next[idx]!, par: e.target.value };
-                                setHoleDrafts(next);
-                              }}
-                            />
-                          </td>
-                          <td className="px-2 py-1">
-                            <input
-                              type="number"
-                              min={1}
-                              max={18}
-                              className="w-16 rounded border border-zinc-300 px-1 py-0.5"
-                              value={h.stroke_index}
-                              onChange={(e) => {
-                                const next = [...holeDrafts];
-                                next[idx] = { ...next[idx]!, stroke_index: e.target.value };
-                                setHoleDrafts(next);
-                              }}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-500">Load submissions first to fetch course data.</p>
-              )}
-              <button
-                type="button"
-                disabled={savingHoles || !secret || !adminCourseId || holeDrafts.length === 0}
-                className="rounded-md bg-emerald-800 px-3 py-2 text-sm text-white disabled:opacity-50"
-                onClick={() => void saveCourseHoles()}
-              >
-                {savingHoles ? "Saving…" : "Save course holes"}
-              </button>
-            </div>
-            <div className="rounded-md border border-zinc-200 bg-white/80 p-3">
-              <p className="text-sm font-medium text-zinc-900">Recompute skins + match scores for one week</p>
-              <p className="mt-1 text-xs text-zinc-600">
-                Use after changing saved handicaps to refresh the week&apos;s skins results and matchup points.
-              </p>
-              <div className="mt-2 flex flex-wrap items-end gap-2">
-                <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
-                  Week
-                  <select
-                    className="min-w-[14rem] rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900"
-                    value={recomputeWeekId}
-                    onChange={(e) => setRecomputeWeekId(e.target.value)}
-                  >
-                    <option value="">Select week</option>
-                    {weeks.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        Week {w.week_number} — {formatSeasonPhase(w.phase)} ({w.week_date})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  onClick={recomputeWeek}
-                  disabled={loading || recomputingWeek || !secret || !recomputeWeekId}
-                  className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
-                >
-                  {recomputingWeek ? "Recomputing…" : "Recompute week"}
-                </button>
-              </div>
-            </div>
+            ) : null}
 
-            <div className="rounded-md border border-zinc-200 bg-white/80 p-3">
-              <p className="text-sm font-medium text-zinc-900">Test cleanup (scores + skins for one week)</p>
-              <p className="mt-1 text-xs text-zinc-600">
-                Clears per-player rounds (hole scores), matchup scorecards, handicap helper rows for that Tuesday&apos;s
-                date, match score rows, and the skins submission for the chosen week. Does not delete scorecard image
-                files in Storage.
-              </p>
-              <div className="mt-2 flex flex-wrap items-end gap-2">
-                <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
-                  Week
-                  <select
-                    className="min-w-[14rem] rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900"
-                    value={cleanupWeekId}
-                    onChange={(e) => setCleanupWeekId(e.target.value)}
+            {adminTaskView === "menu" ? (
+              <div>
+                <p className="mb-3 text-sm font-medium text-amber-950">What do you want to do?</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdminTaskView("championship")}
+                    className="rounded-lg border-2 border-amber-900/20 bg-white p-4 text-left shadow-sm transition hover:border-emerald-700/40 hover:bg-emerald-50/50"
                   >
-                    <option value="">Select week</option>
-                    {weeks.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        Week {w.week_number} — {formatSeasonPhase(w.phase)} ({w.week_date})
+                    <span className="block text-sm font-semibold text-emerald-950">Set championship</span>
+                    <span className="mt-1 block text-xs text-zinc-600">
+                      Set the playoff match from the top two regular-season teams.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminTaskView("skins-buyin")}
+                    className="rounded-lg border-2 border-amber-900/20 bg-white p-4 text-left shadow-sm transition hover:border-emerald-700/40 hover:bg-emerald-50/50"
+                  >
+                    <span className="block text-sm font-semibold text-emerald-950">Set skins buy-in</span>
+                    <span className="mt-1 block text-xs text-zinc-600">League-wide amount each player pays per skins week.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminTaskView("course-holes")}
+                    className="rounded-lg border-2 border-amber-900/20 bg-white p-4 text-left shadow-sm transition hover:border-emerald-700/40 hover:bg-emerald-50/50"
+                  >
+                    <span className="block text-sm font-semibold text-emerald-950">Set course holes</span>
+                    <span className="mt-1 block text-xs text-zinc-600">Par and stroke index per hole for the selected course.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminTaskView("handicap-helper")}
+                    className="rounded-lg border-2 border-amber-900/20 bg-white p-4 text-left shadow-sm transition hover:border-emerald-700/40 hover:bg-emerald-50/50"
+                  >
+                    <span className="block text-sm font-semibold text-emerald-950">Edit handicap helper</span>
+                    <span className="mt-1 block text-xs text-zinc-600">View and edit handicap helper rounds and roster names.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminTaskView("matchup-scores")}
+                    className="rounded-lg border-2 border-amber-900/20 bg-white p-4 text-left shadow-sm transition hover:border-emerald-700/40 hover:bg-emerald-50/50"
+                  >
+                    <span className="block text-sm font-semibold text-emerald-950">Edit matchup scores</span>
+                    <span className="mt-1 block text-xs text-zinc-600">Points, scorecards, per-player rounds, and skins flags.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminTaskView("recompute-week")}
+                    className="rounded-lg border-2 border-amber-900/20 bg-white p-4 text-left shadow-sm transition hover:border-emerald-700/40 hover:bg-emerald-50/50"
+                  >
+                    <span className="block text-sm font-semibold text-emerald-950">Recompute week</span>
+                    <span className="mt-1 block text-xs text-zinc-600">Refresh skins and match points for one week after handicap changes.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminTaskView("week-cleanup")}
+                    className="rounded-lg border-2 border-red-200 bg-white p-4 text-left shadow-sm transition hover:border-red-400/60 hover:bg-red-50/40 sm:col-span-2"
+                  >
+                    <span className="block text-sm font-semibold text-red-900">Remove week data (test cleanup)</span>
+                    <span className="mt-1 block text-xs text-zinc-600">
+                      Clears scores, skins, and related rows for a chosen week. Cannot be undone.
+                    </span>
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {adminTaskView === "championship" ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={refreshChampionship}
+                  disabled={loading || !secret}
+                  className="rounded-md border border-emerald-800 bg-white px-4 py-2 text-sm font-medium text-emerald-900 disabled:opacity-50"
+                >
+                  Set championship to top 2
+                </button>
+              </div>
+            ) : null}
+
+            {adminTaskView === "skins-buyin" ? (
+              <div className="rounded-md border border-zinc-200 bg-white/80 p-3 space-y-3">
+                <p className="text-sm font-medium text-zinc-900">Skins buy-in (each player)</p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
+                    Amount ($)
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="w-32 rounded border border-zinc-300 px-2 py-1.5 text-sm"
+                      value={skinsBuyinDraft}
+                      onChange={(e) => setSkinsBuyinDraft(e.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={savingSettings || !secret}
+                    className="rounded-md bg-zinc-800 px-3 py-2 text-sm text-white disabled:opacity-50"
+                    onClick={() => void saveSkinsBuyin()}
+                  >
+                    {savingSettings ? "Saving…" : "Save buy-in"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {adminTaskView === "course-holes" ? (
+              <div className="rounded-md border border-zinc-200 bg-white/80 p-3 space-y-3">
+                <p className="text-sm font-medium text-zinc-900">Course holes</p>
+                <label className="block text-xs text-zinc-600">
+                  Course
+                  <select
+                    className="mt-1 block w-full max-w-md rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+                    value={adminCourseId}
+                    onChange={async (e) => {
+                      const id = e.target.value;
+                      setAdminCourseId(id);
+                      const hr = await fetch(`/api/admin/courses/${encodeURIComponent(id)}`, {
+                        headers: authHeader(),
+                      });
+                      const hj = await hr.json();
+                      if (hr.ok && Array.isArray(hj.holes)) {
+                        setHoleDrafts(
+                          (hj.holes as { hole_number: number; par: number; stroke_index: number }[]).map((h) => ({
+                            hole_number: h.hole_number,
+                            par: String(h.par),
+                            stroke_index: String(h.stroke_index),
+                          })),
+                        );
+                      }
+                    }}
+                  >
+                    {adminCourses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
                       </option>
                     ))}
                   </select>
                 </label>
+                {holeDrafts.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[320px] border-collapse text-sm">
+                      <thead>
+                        <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium text-zinc-700">
+                          <th className="px-2 py-1">Hole</th>
+                          <th className="px-2 py-1">Par</th>
+                          <th className="px-2 py-1">Stroke idx</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {holeDrafts.map((h, idx) => (
+                          <tr key={h.hole_number} className="border-b border-zinc-100">
+                            <td className="px-2 py-1 font-mono">{h.hole_number}</td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                className="w-16 rounded border border-zinc-300 bg-white px-1 py-0.5 text-zinc-900"
+                                value={h.par}
+                                onChange={(e) => {
+                                  const next = [...holeDrafts];
+                                  next[idx] = { ...next[idx]!, par: e.target.value };
+                                  setHoleDrafts(next);
+                                }}
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                className="w-16 rounded border border-zinc-300 bg-white px-1 py-0.5 text-zinc-900"
+                                value={h.stroke_index}
+                                onChange={(e) => {
+                                  const next = [...holeDrafts];
+                                  next[idx] = { ...next[idx]!, stroke_index: e.target.value };
+                                  setHoleDrafts(next);
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500">Course data did not load. Try Enter again.</p>
+                )}
                 <button
                   type="button"
-                  onClick={cleanupTestWeek}
-                  disabled={loading || !secret || !cleanupWeekId}
-                  className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-900 hover:bg-red-100 disabled:opacity-50"
+                  disabled={savingHoles || !secret || !adminCourseId || holeDrafts.length === 0}
+                  className="rounded-md bg-emerald-800 px-3 py-2 text-sm text-white disabled:opacity-50"
+                  onClick={() => void saveCourseHoles()}
                 >
-                  Remove scores + skins for week
+                  {savingHoles ? "Saving…" : "Save course holes"}
                 </button>
               </div>
-              <details className="mt-3 text-xs text-zinc-500">
-                <summary className="cursor-pointer text-zinc-600">Manual cleanup steps</summary>
-                <ul className="mt-2 list-inside list-disc space-y-1 pl-1">
-                  <li>
-                    <strong>Admin (above):</strong> choose the week and use &quot;Remove scores + skins for week&quot;.
-                  </li>
-                  <li>
-                    <strong>Scores only:</strong> load submissions below and use Delete on each row.
-                  </li>
-                  <li>
-                    <strong>Supabase SQL:</strong> for week UUID <code className="rounded bg-zinc-100 px-0.5">$week</code>
-                    , delete from <code className="rounded bg-zinc-100 px-0.5">nhgl.score_submissions</code>,{" "}
-                    <code className="rounded bg-zinc-100 px-0.5">skins_hole_wins</code>,{" "}
-                    <code className="rounded bg-zinc-100 px-0.5">skins_buyins</code>,{" "}
-                    <code className="rounded bg-zinc-100 px-0.5">skins_week_payouts</code>, then{" "}
-                    <code className="rounded bg-zinc-100 px-0.5">skins_week_results</code> where{" "}
-                    <code className="rounded bg-zinc-100 px-0.5">week_id</code> matches.
-                  </li>
-                  <li>
-                    <strong>Storage:</strong> remove leftover scorecard images from the{" "}
-                    <code className="rounded bg-zinc-100 px-0.5">nhgl-scorecards</code> bucket in the Supabase
-                    dashboard if you care about orphaned files.
-                  </li>
-                </ul>
-              </details>
-            </div>
+            ) : null}
+
+            {adminTaskView === "recompute-week" ? (
+              <div className="rounded-md border border-zinc-200 bg-white/80 p-3">
+                <p className="text-sm font-medium text-zinc-900">Recompute skins + match scores for one week</p>
+                <p className="mt-1 text-xs text-zinc-600">
+                  Use after changing saved handicaps to refresh the week&apos;s skins results and matchup points.
+                </p>
+                <div className="mt-2 flex flex-wrap items-end gap-2">
+                  <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
+                    Week
+                    <select
+                      className="min-w-[14rem] rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900"
+                      value={recomputeWeekId}
+                      onChange={(e) => setRecomputeWeekId(e.target.value)}
+                    >
+                      <option value="">Select week</option>
+                      {weeks.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          Week {w.week_number} — {formatSeasonPhase(w.phase)} ({w.week_date})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={recomputeWeek}
+                    disabled={loading || recomputingWeek || !secret || !recomputeWeekId}
+                    className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                  >
+                    {recomputingWeek ? "Recomputing…" : "Recompute week"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {adminTaskView === "week-cleanup" ? (
+              <div className="rounded-md border border-zinc-200 bg-white/80 p-3">
+                <p className="text-sm font-medium text-zinc-900">Test cleanup (scores + skins for one week)</p>
+                <p className="mt-1 text-xs text-zinc-600">
+                  Clears per-player rounds (hole scores), matchup scorecards, handicap helper rows for that Tuesday&apos;s
+                  date, match score rows, and the skins submission for the chosen week. Does not delete scorecard image
+                  files in Storage.
+                </p>
+                <div className="mt-2 flex flex-wrap items-end gap-2">
+                  <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
+                    Week
+                    <select
+                      className="min-w-[14rem] rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900"
+                      value={cleanupWeekId}
+                      onChange={(e) => setCleanupWeekId(e.target.value)}
+                    >
+                      <option value="">Select week</option>
+                      {weeks.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          Week {w.week_number} — {formatSeasonPhase(w.phase)} ({w.week_date})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={cleanupTestWeek}
+                    disabled={loading || !secret || !cleanupWeekId}
+                    className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-900 hover:bg-red-100 disabled:opacity-50"
+                  >
+                    Remove scores + skins for week
+                  </button>
+                </div>
+                <details className="mt-3 text-xs text-zinc-500">
+                  <summary className="cursor-pointer text-zinc-600">Manual cleanup steps</summary>
+                  <ul className="mt-2 list-inside list-disc space-y-1 pl-1">
+                    <li>
+                      <strong>Admin:</strong> use Remove week data (test cleanup) here, or the week tool above.
+                    </li>
+                    <li>
+                      <strong>Scores only:</strong> open Edit matchup scores and delete each submission row.
+                    </li>
+                    <li>
+                      <strong>Supabase SQL:</strong> for week UUID <code className="rounded bg-zinc-100 px-0.5">$week</code>
+                      , delete from <code className="rounded bg-zinc-100 px-0.5">nhgl.score_submissions</code>,{" "}
+                      <code className="rounded bg-zinc-100 px-0.5">skins_hole_wins</code>,{" "}
+                      <code className="rounded bg-zinc-100 px-0.5">skins_buyins</code>,{" "}
+                      <code className="rounded bg-zinc-100 px-0.5">skins_week_payouts</code>, then{" "}
+                      <code className="rounded bg-zinc-100 px-0.5">skins_week_results</code> where{" "}
+                      <code className="rounded bg-zinc-100 px-0.5">week_id</code> matches.
+                    </li>
+                    <li>
+                      <strong>Storage:</strong> remove leftover scorecard images from the{" "}
+                      <code className="rounded bg-zinc-100 px-0.5">nhgl-scorecards</code> bucket in the Supabase
+                      dashboard if you care about orphaned files.
+                    </li>
+                  </ul>
+                </details>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
 
       {err && <p className="text-red-700">{err}</p>}
 
-      {rows && (
+      {rows && adminTaskView === "handicap-helper" && (
         <div className="space-y-6">
           <section className="space-y-3">
             <h2 className="text-lg font-semibold text-emerald-950">Handicap helper scores</h2>
@@ -691,6 +885,10 @@ export function AdminScoresClient() {
                             i % 2 === 1 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"
                           } ${selectedHandicapPlayerId === p.player_id ? "ring-2 ring-inset ring-emerald-700/40" : ""}`}
                           onClick={() => {
+                            if (p.player_id !== selectedHandicapPlayerId) {
+                              setEditingPlayerId(null);
+                              setDraftPlayerName("");
+                            }
                             setSelectedHandicapPlayerId(p.player_id);
                             setEditingHandicapRowId(null);
                           }}
@@ -711,15 +909,71 @@ export function AdminScoresClient() {
 
             {selectedHandicapPlayer ? (
               <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] p-3 shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
-                <div className="flex items-center justify-between gap-2 border-b border-emerald-900/20 pb-2">
-                  <div>
-                    <h3 className="text-base font-semibold text-emerald-950">{selectedHandicapPlayer.player_name}</h3>
-                    <p className="text-xs text-emerald-900/70">
-                      Handicap {formatVersusParHandicap(selectedHandicapPlayer.handicap)} (based on{" "}
-                      {selectedHandicapPlayer.rounds_in_avg} round
-                      {selectedHandicapPlayer.rounds_in_avg === 1 ? "" : "s"})
-                    </p>
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-emerald-900/20 pb-2">
+                  <div className="min-w-0 flex-1">
+                    {editingPlayerId === selectedHandicapPlayer.player_id ? (
+                      <div className="space-y-2">
+                        <label className="block text-xs font-medium text-emerald-900/80">Roster name</label>
+                        <input
+                          type="text"
+                          className="w-full max-w-md rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900"
+                          value={draftPlayerName}
+                          onChange={(e) => setDraftPlayerName(e.target.value)}
+                          disabled={savingPlayerId !== null}
+                          autoComplete="off"
+                        />
+                        <p className="text-xs text-zinc-500">Must be unique across the league.</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="rounded border border-zinc-300 bg-white px-3 py-1 text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
+                            disabled={savingPlayerId !== null}
+                            onClick={() => {
+                              setEditingPlayerId(null);
+                              setDraftPlayerName("");
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded border border-emerald-600 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                            disabled={savingPlayerId !== null}
+                            onClick={() => void savePlayerName(selectedHandicapPlayer.player_id)}
+                          >
+                            {savingPlayerId === selectedHandicapPlayer.player_id ? "Saving…" : "Save name"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <h3 className="text-base font-semibold text-emerald-950">{selectedHandicapPlayer.player_name}</h3>
+                        {selectedPlayerRoster?.team_name ? (
+                          <p className="text-xs text-zinc-600">{selectedPlayerRoster.team_name}</p>
+                        ) : null}
+                        <p className="text-xs text-emerald-900/70">
+                          Handicap {formatVersusParHandicap(selectedHandicapPlayer.handicap)} (based on{" "}
+                          {selectedHandicapPlayer.rounds_in_avg} round
+                          {selectedHandicapPlayer.rounds_in_avg === 1 ? "" : "s"})
+                        </p>
+                      </>
+                    )}
                   </div>
+                  {editingPlayerId !== selectedHandicapPlayer.player_id ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded border border-emerald-700 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                      disabled={savingPlayerId !== null || deletingHandicapRowId !== null}
+                      onClick={() => {
+                        setErr("");
+                        setEditingHandicapRowId(null);
+                        setEditingPlayerId(selectedHandicapPlayer.player_id);
+                        setDraftPlayerName(selectedHandicapPlayer.player_name);
+                      }}
+                    >
+                      Edit name
+                    </button>
+                  ) : null}
                 </div>
                 {selectedHandicapRows.length === 0 ? (
                   <p className="mt-3 text-sm text-zinc-600">No scores for this player.</p>
@@ -774,7 +1028,11 @@ export function AdminScoresClient() {
                                 type="button"
                                 className="rounded border border-emerald-700 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
                                 disabled={deletingHandicapRowId !== null}
-                                onClick={() => setEditingHandicapRowId(r.id)}
+                                onClick={() => {
+                                  setEditingPlayerId(null);
+                                  setDraftPlayerName("");
+                                  setEditingHandicapRowId(r.id);
+                                }}
                               >
                                 Edit
                               </button>
@@ -796,7 +1054,17 @@ export function AdminScoresClient() {
               </div>
             ) : null}
           </section>
+        </div>
+      )}
 
+      {rows && adminTaskView === "matchup-scores" && (
+        <div className="space-y-6">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-emerald-950">Matchup scores</h2>
+            <p className="text-sm text-zinc-600">
+              Open a week, then a matchup, to edit points, scorecards, and per-player rounds.
+            </p>
+          </div>
           <div className="space-y-3">
           {weekGroups.map((g) => (
             <details
@@ -835,6 +1103,7 @@ export function AdminScoresClient() {
                         <div className="border-t border-zinc-100 bg-white px-3 py-3">
                           <ScoreRowEditor
                             row={r}
+                            playerRounds={matchPlayerRoundsByMatch[r.match_id] ?? EMPTY_PLAYER_ROUNDS}
                             authHeader={authHeader}
                             onSave={async (draft) => {
                               const sum = Number(draft.team_a_points) + Number(draft.team_b_points);
@@ -865,6 +1134,7 @@ export function AdminScoresClient() {
                               setErr("");
                               return load();
                             }}
+                            onMatchRoundsUpdated={() => load()}
                             onError={setErr}
                           />
                         </div>
@@ -943,13 +1213,12 @@ function HandicapScoreEditor({
         </label>
         <label className="block">
           Score
-          <input
-            type="number"
+          <LooseNumberInput
             min={18}
             max={200}
-            className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
+            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-900"
             value={draft.score}
-            onChange={(e) => setDraft({ ...draft, score: Number(e.target.value) })}
+            onValueChange={(n) => setDraft({ ...draft, score: n })}
           />
         </label>
       </div>
@@ -957,29 +1226,22 @@ function HandicapScoreEditor({
         <div className="flex items-end gap-3">
           <label className="block w-28">
           Par
-          <input
-            type="number"
+          <LooseNumberInput
             min={18}
             max={144}
-            className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
+            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-900"
             value={draft.par}
-            onChange={(e) => setDraft({ ...draft, par: Number(e.target.value) })}
+            onValueChange={(n) => setDraft({ ...draft, par: n })}
           />
         </label>
           <label className="block w-36">
             Saved handicap
-            <input
-              type="number"
+            <LooseNullableIntInput
               min={0}
               max={99}
-              className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
-              value={draft.handicap_at_submission ?? ""}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  handicap_at_submission: e.target.value === "" ? null : Number(e.target.value),
-                })
-              }
+              className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-900"
+              value={draft.handicap_at_submission}
+              onValueChange={(n) => setDraft({ ...draft, handicap_at_submission: n })}
             />
           </label>
         </div>
@@ -1022,19 +1284,173 @@ function HandicapScoreEditor({
   );
 }
 
+function MatchPlayerRoundsEditor({
+  weekId,
+  matchId,
+  rounds,
+  authHeader,
+  onUpdated,
+  onError,
+}: {
+  weekId: string;
+  matchId: string;
+  rounds: PlayerRoundAdmin[];
+  authHeader: () => { Authorization: string };
+  onUpdated: () => Promise<void>;
+  onError: (msg: string) => void;
+}) {
+  const baselineRef = useRef("");
+  const [drafts, setDrafts] = useState<MatchRoundsDraft[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const next = buildMatchDrafts(rounds);
+    setDrafts(next);
+    baselineRef.current = JSON.stringify(next);
+  }, [rounds]);
+
+  const hasChanges = JSON.stringify(drafts) !== baselineRef.current;
+
+  function updateSkins(roundId: string, played: boolean) {
+    setDrafts((prev) =>
+      prev.map((d) => (d.player_round_id === roundId ? { ...d, played_skins: played } : d)),
+    );
+  }
+
+  function setHoleStrokes(roundId: string, holeNumber: number, strokes: number) {
+    setDrafts((prev) =>
+      prev.map((d) =>
+        d.player_round_id !== roundId
+          ? d
+          : {
+              ...d,
+              holes: d.holes.map((h) =>
+                h.hole_number === holeNumber ? { ...h, strokes } : h,
+              ),
+            },
+      ),
+    );
+  }
+
+  async function saveRounds() {
+    onError("");
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/match-rounds", {
+        method: "PATCH",
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          match_id: matchId,
+          week_id: weekId,
+          rounds: drafts,
+        }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        onError(json.error ?? "Save failed");
+        return;
+      }
+      await onUpdated();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (rounds.length === 0) {
+    return (
+      <div className="mt-4 border-t border-zinc-100 pt-3">
+        <p className="text-xs font-medium text-zinc-700">Player rounds (Submit Round)</p>
+        <p className="mt-1 text-xs text-zinc-500">
+          No per-player hole scores on file for this match (for example a legacy points-only submission, or not all
+          four players have submitted yet).
+        </p>
+      </div>
+    );
+  }
+
+  const sideLabel =
+    rounds[0]?.which_nine?.toLowerCase() === "back" ? "Back nine (holes 10–18)" : "Front nine (holes 1–9)";
+
+  return (
+    <div className="mt-4 space-y-4 border-t border-zinc-100 pt-3">
+      <div>
+        <p className="text-xs font-medium text-zinc-700">Player rounds (Submit Round)</p>
+        <p className="mt-0.5 text-xs text-zinc-500">
+          Edit strokes and skins for the week. Saving runs the same recomputation as a fresh submission ({sideLabel}).
+        </p>
+      </div>
+      {drafts.map((d) => {
+        const meta = rounds.find((r) => r.id === d.player_round_id);
+        return (
+          <div key={d.player_round_id} className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50/80 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm">
+                <span className="font-medium text-zinc-900">{meta?.player_name ?? "Player"}</span>
+                <span className="text-zinc-500"> · {meta?.team_name ?? "?"}</span>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={d.played_skins}
+                  onChange={(e) => updateSkins(d.player_round_id, e.target.checked)}
+                  className="rounded border-zinc-400"
+                />
+                Skins this week
+              </label>
+            </div>
+            <div className="overflow-x-auto">
+              <div className="flex min-w-max gap-1.5">
+                {d.holes.map((h) => (
+                  <label
+                    key={h.hole_number}
+                    className="flex w-11 flex-col text-center text-[0.65rem] text-zinc-600"
+                  >
+                    <span className="font-mono tabular-nums">{h.hole_number}</span>
+                    <LooseNumberInput
+                      min={1}
+                      max={20}
+                      className="mt-0.5 w-full rounded border border-zinc-300 bg-white px-0.5 py-1 text-center font-mono text-xs text-zinc-900 tabular-nums"
+                      value={h.strokes}
+                      onValueChange={(n) => setHoleStrokes(d.player_round_id, h.hole_number, n)}
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        disabled={saving || !hasChanges}
+        className="rounded-md bg-zinc-800 px-3 py-2 text-sm text-white disabled:opacity-50"
+        onClick={() => void saveRounds()}
+      >
+        {saving ? "Saving…" : "Save hole scores & skins"}
+      </button>
+    </div>
+  );
+}
+
 function ScoreRowEditor({
   row,
+  playerRounds,
   authHeader,
   onSave,
   onDelete,
   onScorecardReplaced,
+  onMatchRoundsUpdated,
   onError,
 }: {
   row: Row;
+  playerRounds: PlayerRoundAdmin[];
   authHeader: () => { Authorization: string };
   onSave: (r: Row) => Promise<void>;
   onDelete: () => void;
   onScorecardReplaced: () => Promise<void>;
+  onMatchRoundsUpdated: () => Promise<void>;
   onError: (msg: string) => void;
 }) {
   const [draft, setDraft] = useState(row);
@@ -1085,12 +1501,13 @@ function ScoreRowEditor({
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="block">
           Team A points
-          <input
-            type="number"
-            className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
+          <LooseNumberInput
+            allowDecimal
+            min={0}
+            max={10}
+            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-900"
             value={draft.team_a_points}
-            onChange={(e) => {
-              const v = Number(e.target.value);
+            onValueChange={(v) => {
               setDraft({
                 ...draft,
                 team_a_points: v,
@@ -1101,12 +1518,13 @@ function ScoreRowEditor({
         </label>
         <label className="block">
           Team B points
-          <input
-            type="number"
-            className="mt-1 w-full rounded border border-zinc-300 px-2 py-1"
+          <LooseNumberInput
+            allowDecimal
+            min={0}
+            max={10}
+            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-900"
             value={draft.team_b_points}
-            onChange={(e) => {
-              const v = Number(e.target.value);
+            onValueChange={(v) => {
               setDraft({
                 ...draft,
                 team_b_points: v,
@@ -1139,6 +1557,14 @@ function ScoreRowEditor({
           {row.submitter_player_name ?? "—"} <span className="text-zinc-400">({row.submitted_by_player_id})</span>
         </div>
       )}
+      <MatchPlayerRoundsEditor
+        weekId={row.week_id}
+        matchId={row.match_id}
+        rounds={playerRounds}
+        authHeader={authHeader}
+        onUpdated={onMatchRoundsUpdated}
+        onError={onError}
+      />
       <div className="space-y-2">
         <p className="text-xs font-medium text-zinc-600">Scorecard image</p>
         {draft.scorecard_image_url ? (

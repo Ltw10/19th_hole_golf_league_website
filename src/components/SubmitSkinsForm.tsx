@@ -1,5 +1,6 @@
 "use client";
 
+import { LooseNumberInput } from "@/components/LooseNumberInput";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -267,15 +268,14 @@ export function SubmitSkinsForm({ weeks, players }: Props) {
                       </option>
                     ))}
                   </select>
-                  <input
-                    type="number"
+                  <LooseNumberInput
                     min={1}
                     max={18}
-                    className="h-11 w-16 shrink-0 rounded-md border border-zinc-300 px-2 py-2 text-base sm:w-20"
+                    className="h-11 w-16 shrink-0 rounded-md border border-zinc-300 bg-white px-2 py-2 text-base text-zinc-900 sm:w-20"
                     value={row.hole}
-                    onChange={(e) => {
+                    onValueChange={(n) => {
                       const next = [...holes];
-                      next[idx] = { ...next[idx]!, hole: Number(e.target.value) };
+                      next[idx] = { ...next[idx]!, hole: n };
                       setHoles(next);
                     }}
                   />

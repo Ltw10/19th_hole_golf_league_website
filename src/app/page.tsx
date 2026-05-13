@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { SCHEDULE_CURRENT_WEEK_ANCHOR } from "@/lib/schedule";
 
 const links = [
   {
@@ -9,7 +10,7 @@ const links = [
     tone: "primary" as const,
   },
   {
-    href: "/schedule",
+    href: `/schedule#${SCHEDULE_CURRENT_WEEK_ANCHOR}`,
     title: "Schedule",
     description: "Week-by-week matchups",
     tone: "default" as const,

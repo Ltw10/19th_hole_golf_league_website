@@ -2,6 +2,7 @@
 
 import { useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { LooseNumberInput } from "@/components/LooseNumberInput";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { formatSeasonPhase, SCORECARDS_BUCKET } from "@/lib/nhgl";
 
@@ -175,15 +176,14 @@ export function SubmitScoreForm({
               ? `${teamName(selectedMatch.team_a_id)} points`
               : "Team A points"}
           </label>
-          <input
-            type="number"
+          <LooseNumberInput
+            allowDecimal
             min={0}
             max={10}
             required
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2.5 text-base"
+            className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-base text-zinc-900"
             value={a}
-            onChange={(e) => {
-              const na = Number(e.target.value);
+            onValueChange={(na) => {
               setA(na);
               setB(10 - na);
             }}
@@ -195,15 +195,14 @@ export function SubmitScoreForm({
               ? `${teamName(selectedMatch.team_b_id)} points`
               : "Team B points"}
           </label>
-          <input
-            type="number"
+          <LooseNumberInput
+            allowDecimal
             min={0}
             max={10}
             required
-            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2.5 text-base"
+            className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-base text-zinc-900"
             value={b}
-            onChange={(e) => {
-              const nb = Number(e.target.value);
+            onValueChange={(nb) => {
               setB(nb);
               setA(10 - nb);
             }}

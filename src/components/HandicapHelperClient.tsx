@@ -372,11 +372,10 @@ export function HandicapHelperClient({
               <label className="block text-sm font-medium text-emerald-950">
                 Score (strokes)
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   required
-                  min={18}
-                  max={200}
-                  className="mt-1 w-full rounded-md border border-emerald-900/25 bg-white px-3 py-2 text-sm tabular-nums"
+                  className="mt-1 w-full rounded-md border border-emerald-900/25 bg-white px-3 py-2 text-sm tabular-nums text-emerald-950"
                   value={score}
                   onChange={(e) => setScore(e.target.value)}
                   placeholder="e.g. 42"
@@ -385,11 +384,10 @@ export function HandicapHelperClient({
               <label className="block text-sm font-medium text-emerald-950">
                 Par for the round
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   required
-                  min={18}
-                  max={144}
-                  className="mt-1 w-full rounded-md border border-emerald-900/25 bg-white px-3 py-2 text-sm tabular-nums"
+                  className="mt-1 w-full rounded-md border border-emerald-900/25 bg-white px-3 py-2 text-sm tabular-nums text-emerald-950"
                   value={par}
                   onChange={(e) => setPar(e.target.value)}
                 />

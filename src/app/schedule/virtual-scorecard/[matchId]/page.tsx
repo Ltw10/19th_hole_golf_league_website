@@ -224,7 +224,7 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
     );
 
     return (
-      <div className="space-y-5">
+      <div className="flex min-w-0 flex-col gap-6">
         <BackToScheduleButton />
         <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
           <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2">
@@ -314,13 +314,29 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
   const rosterB = playerRows
     .filter((p) => p.team_id === teamBId && p.is_league_member)
     .sort((a, b) => a.name.localeCompare(b.name));
+  const rosterIds = new Set([...rosterA, ...rosterB].map((p) => p.id));
   const submittedByPlayer = new Map(roundRows.map((r) => [r.player_id, r] as const));
-  const extraSubmitted = roundRows.filter(
-    (r) => !rosterA.some((p) => p.id === r.player_id) && !rosterB.some((p) => p.id === r.player_id),
+  const roundBySubbingFor = new Map(
+    roundRows
+      .filter((r): r is RoundRow & { subbing_for_player_id: string } => Boolean(r.subbing_for_player_id))
+      .map((r) => [r.subbing_for_player_id, r] as const),
   );
+  const extraSubmitted = roundRows.filter((r) => {
+    if (r.subbing_for_player_id && rosterIds.has(r.subbing_for_player_id)) return false;
+    if (rosterIds.has(r.player_id)) return false;
+    return true;
+  });
   const displayRows = [
-    ...rosterA.map((p) => ({ teamId: teamAId, playerId: p.id, row: submittedByPlayer.get(p.id) ?? null })),
-    ...rosterB.map((p) => ({ teamId: teamBId, playerId: p.id, row: submittedByPlayer.get(p.id) ?? null })),
+    ...rosterA.map((p) => ({
+      teamId: teamAId,
+      playerId: p.id,
+      row: submittedByPlayer.get(p.id) ?? roundBySubbingFor.get(p.id) ?? null,
+    })),
+    ...rosterB.map((p) => ({
+      teamId: teamBId,
+      playerId: p.id,
+      row: submittedByPlayer.get(p.id) ?? roundBySubbingFor.get(p.id) ?? null,
+    })),
     ...extraSubmitted.map((r) => ({ teamId: r.played_for_team_id, playerId: r.player_id, row: r })),
   ];
   const holeSummaries = holes.map((hole) => {
@@ -344,7 +360,7 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
     combinedNetA < combinedNetB ? teamLabelA : combinedNetB < combinedNetA ? teamLabelB : null;
 
   return (
-    <div className="space-y-5">
+    <div className="flex min-w-0 flex-col gap-6">
       <BackToScheduleButton />
 
       <div className="rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]">
@@ -366,6 +382,9 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b-2 border-emerald-900/25 bg-emerald-950 text-[#f2efe4]">
+                <th className="w-14 border-r border-emerald-700/50 px-2 py-2 text-center text-[0.65rem] font-bold uppercase tracking-wider">
+                  Hcp
+                </th>
                 <th className="border-r border-emerald-700/50 px-3 py-2 text-left text-[0.65rem] font-bold uppercase tracking-wider">
                   Player
                 </th>
@@ -380,6 +399,9 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
                 <th className="px-3 py-2 text-right text-[0.65rem] font-bold uppercase tracking-wider">Net total</th>
               </tr>
               <tr className="border-b border-emerald-900/20 bg-[#eef3e8]/90 text-emerald-900/80">
+                <th className="border-r border-emerald-900/15 px-2 py-1.5 text-center text-xs font-medium text-emerald-900/60">
+                  —
+                </th>
                 <th className="border-r border-emerald-900/15 px-3 py-1.5 text-left text-xs font-medium">Par</th>
                 {holes.map((h) => (
                   <th key={`par-${h}`} className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs">
@@ -393,9 +415,16 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
             <tbody>
               {displayRows.map((entry, idx) => {
                 const r = entry.row;
-                const name = playerName.get(entry.playerId) ?? "Unknown player";
-                const subFor = r?.subbing_for_player_id ? playerName.get(r.subbing_for_player_id) : null;
-                const hcap = r?.handicap_at_submission ?? null;
+                const rosterName = playerName.get(entry.playerId) ?? "Unknown player";
+                const nameMain =
+                  r?.subbing_for_player_id === entry.playerId
+                    ? (playerName.get(r.player_id) ?? "Unknown player")
+                    : rosterName;
+                const nameSuffix =
+                  r?.subbing_for_player_id === entry.playerId ? (
+                    <span className="ml-1 text-xs font-normal text-zinc-600">(Playing for {rosterName})</span>
+                  ) : null;
+                const hcapEff = r ? (handicapByRoundId.get(r.id) ?? 0) : null;
                 const total = holes.reduce((sum, h) => sum + (r ? (strokesByRoundHole.get(`${r.id}:${h}`) ?? 0) : 0), 0);
                 const netTotal = holes.reduce((sum, h) => {
                   const grossHole = r ? (strokesByRoundHole.get(`${r.id}:${h}`) ?? 0) : 0;
@@ -407,10 +436,12 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
                     key={`${entry.playerId}:${r?.id ?? "missing"}`}
                     className={`border-b border-emerald-900/15 ${idx % 2 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"}`}
                   >
+                    <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono text-sm tabular-nums text-emerald-900">
+                      {hcapEff === null ? "—" : hcapEff}
+                    </td>
                     <td className="border-r border-emerald-900/15 px-3 py-2 text-left font-medium text-emerald-950">
-                      {name}
-                      {subFor ? <span className="ml-1 text-xs font-normal text-zinc-600">(sub for {subFor})</span> : null}
-                      <span className="ml-1 text-xs font-normal text-zinc-600">[hcp {hcap ?? "-"}]</span>
+                      {nameMain}
+                      {nameSuffix}
                     </td>
                     {holes.map((h) => (
                       <td
@@ -450,9 +481,10 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
                 );
               })}
               <tr className="border-t-2 border-emerald-900/20 bg-[#eef3e8]/90 text-emerald-900/85">
-                <td className="border-r border-emerald-900/15 px-3 py-1.5 text-left text-xs font-medium">HCP</td>
+                <td className="border-r border-emerald-900/15 px-2 py-1.5 text-center text-xs text-emerald-900/50"> </td>
+                <td className="border-r border-emerald-900/15 px-3 py-1.5 text-left text-xs font-medium">Stroke index</td>
                 {holes.map((h) => (
-                  <td key={`hcp-bottom-${h}`} className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs">
+                  <td key={`si-bottom-${h}`} className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs">
                     {strokeIndexByHole.get(h) ?? "-"}
                   </td>
                 ))}
@@ -514,10 +546,10 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
             </thead>
             <tbody>
               <tr className="border-b border-emerald-900/15 bg-[#eef3e8]/90">
-                <td className="border-r border-emerald-900/15 px-3 py-1.5 text-xs font-medium text-emerald-950">HCP</td>
+                <td className="border-r border-emerald-900/15 px-3 py-1.5 text-xs font-medium text-emerald-950">Stroke index</td>
                 {holeSummaries.map((h) => (
                   <td
-                    key={`dots-hcp-${h.hole}`}
+                    key={`dots-si-${h.hole}`}
                     className="border-r border-emerald-900/15 px-2 py-1.5 text-center font-mono text-xs text-emerald-900 last:border-r-0"
                   >
                     {strokeIndexByHole.get(h.hole) ?? "-"}
