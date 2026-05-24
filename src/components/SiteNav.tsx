@@ -56,12 +56,33 @@ export function SiteNav() {
     setOpen(false);
   }, [pathname]);
 
+  // Preserve scroll position on mobile; plain overflow:hidden often jumps to page top.
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const scrollY = window.scrollY;
+    const { style } = document.body;
+    const prev = {
+      position: style.position,
+      top: style.top,
+      left: style.left,
+      right: style.right,
+      width: style.width,
+      overflow: style.overflow,
+    };
+    style.position = "fixed";
+    style.top = `-${scrollY}px`;
+    style.left = "0";
+    style.right = "0";
+    style.width = "100%";
+    style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = prev;
+      style.position = prev.position;
+      style.top = prev.top;
+      style.left = prev.left;
+      style.right = prev.right;
+      style.width = prev.width;
+      style.overflow = prev.overflow;
+      window.scrollTo(0, scrollY);
     };
   }, [open]);
 
@@ -75,7 +96,11 @@ export function SiteNav() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-emerald-900/15 bg-emerald-950/95 backdrop-blur-sm">
+    <header
+      className={`z-50 border-b border-emerald-900/15 bg-emerald-950/95 backdrop-blur-sm ${
+        open ? "fixed inset-x-0 top-0 md:sticky md:top-0" : "sticky top-0"
+      }`}
+    >
       <div className="relative mx-auto max-w-5xl px-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
         <div className="flex min-h-[3.25rem] items-center justify-between gap-2 py-2">
           <Link
