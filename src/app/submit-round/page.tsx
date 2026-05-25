@@ -24,6 +24,8 @@ export default async function SubmitRoundPage(props: {
   let hhScoresByPlayer: Record<string, ScoreRow[]> = {};
   let skinsBuyinAmount = 5;
   let subsTeamId: string | null = null;
+  let existingRounds: FormProps["existingRounds"] = [];
+  let finalizedMatchIds: FormProps["finalizedMatchIds"] = [];
 
   try {
     const supabase = await createServerSupabaseClient();
@@ -36,6 +38,8 @@ export default async function SubmitRoundPage(props: {
       settingsRes,
       hhRes,
       teamsNamed,
+      roundsRes,
+      finalizedRes,
     ] = await Promise.all([
       supabase.from("season_weeks").select("*").order("week_number", { ascending: true }),
       supabase.from("matches").select("*"),
@@ -48,6 +52,10 @@ export default async function SubmitRoundPage(props: {
         .select("player_id, played_date, score, par, created_at")
         .order("played_date", { ascending: false }),
       supabase.from("teams").select("id").eq("name", SKINS_SUBSTITUTES_TEAM_NAME).maybeSingle(),
+      supabase
+        .from("player_rounds")
+        .select("week_id, match_id, player_id, subbing_for_player_id"),
+      supabase.from("score_submissions").select("match_id"),
     ]);
 
     const courseId = courseRes.data?.id as string | undefined;
@@ -68,6 +76,8 @@ export default async function SubmitRoundPage(props: {
       settingsRes.error ??
       hhRes.error ??
       teamsNamed.error ??
+      roundsRes.error ??
+      finalizedRes.error ??
       courseRes.error;
     if (err) loadError = err.message;
     else {
@@ -86,6 +96,14 @@ export default async function SubmitRoundPage(props: {
       }
 
       subsTeamId = (teamsNamed.data?.id as string | undefined) ?? null;
+
+      existingRounds = (roundsRes.data ?? []).map((row) => ({
+        weekId: String(row.week_id),
+        matchId: String(row.match_id),
+        playerId: String(row.player_id),
+        subbingForPlayerId: row.subbing_for_player_id ? String(row.subbing_for_player_id) : null,
+      }));
+      finalizedMatchIds = [...new Set((finalizedRes.data ?? []).map((row) => String(row.match_id)))];
 
       for (const row of hhRes.data ?? []) {
         const pid = row.player_id as string;
@@ -135,8 +153,8 @@ export default async function SubmitRoundPage(props: {
       <div>
         <h1 className="text-xl font-semibold text-emerald-950 sm:text-2xl">Submit round</h1>
         <p className="mt-1 text-sm text-zinc-600 sm:text-base">
-          Enter all nine holes for league night. Skins and team points update automatically when everyone in the match has
-          submitted.
+          Enter all nine holes for league night (one submission per player per week). Skins and team points update when
+          everyone in the match has submitted. Corrections after you submit must go through an admin.
         </p>
       </div>
       <SubmitRoundForm
@@ -150,6 +168,8 @@ export default async function SubmitRoundPage(props: {
         hhScoresByPlayer={hhScoresByPlayer}
         weekDatesByWeekId={weekDatesByWeekId}
         subsTeamId={subsTeamId}
+        existingRounds={existingRounds}
+        finalizedMatchIds={finalizedMatchIds}
         initialWeekId={initialWeekId}
         initialMatchId={initialMatchId}
       />

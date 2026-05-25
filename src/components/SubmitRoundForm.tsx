@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { LooseNumberInput } from "@/components/LooseNumberInput";
 import { formatSeasonPhase, SCORECARDS_BUCKET } from "@/lib/nhgl";
+import { getSubmitRoundBlockReason, type ExistingPlayerRound } from "@/lib/submit-round";
 import {
   handicapFromScores,
   holeNet,
@@ -167,6 +168,8 @@ export type SubmitRoundFormProps = {
   hhScoresByPlayer: Record<string, ScoreRow[]>;
   weekDatesByWeekId: Record<string, string>;
   subsTeamId: string | null;
+  existingRounds: ExistingPlayerRound[];
+  finalizedMatchIds: string[];
   initialWeekId?: string;
   initialMatchId?: string;
 };
@@ -182,11 +185,14 @@ export function SubmitRoundForm({
   hhScoresByPlayer,
   weekDatesByWeekId,
   subsTeamId,
+  existingRounds,
+  finalizedMatchIds,
   initialWeekId,
   initialMatchId,
 }: SubmitRoundFormProps) {
   const router = useRouter();
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
+  const finalizedMatchIdSet = useMemo(() => new Set(finalizedMatchIds), [finalizedMatchIds]);
   const teamName = useMemo(() => {
     const m = new Map(teams.map((t) => [t.id, t.name]));
     return (id: string | null) => (id ? m.get(id) ?? "?" : "?");
@@ -261,6 +267,27 @@ export function SubmitRoundForm({
     return side.slice(0, 9);
   }, [courseHoles, whichNine]);
 
+  const submitBlockReason = useMemo(
+    () =>
+      getSubmitRoundBlockReason({
+        existingRounds,
+        finalizedMatchIds: finalizedMatchIdSet,
+        weekId,
+        matchId,
+        playerId,
+        subbingForPlayerId: isSubstitutePlayer ? subbingForPlayerId : null,
+      }),
+    [
+      existingRounds,
+      finalizedMatchIdSet,
+      weekId,
+      matchId,
+      playerId,
+      isSubstitutePlayer,
+      subbingForPlayerId,
+    ],
+  );
+
   const totals = useMemo(() => {
     const holes = holesSorted.slice(0, 9);
     const gross = holes.reduce((sum, _hole, idx) => sum + (strokes[idx] ?? 4), 0);
@@ -311,6 +338,12 @@ export function SubmitRoundForm({
     e.preventDefault();
     setStatus("loading");
     setMessage("");
+
+    if (submitBlockReason) {
+      setStatus("err");
+      setMessage(submitBlockReason);
+      return;
+    }
 
     const match = matches.find((m) => m.id === matchId);
     if (!match?.team_a_id || !match.team_b_id) {
@@ -385,6 +418,15 @@ export function SubmitRoundForm({
 
   return (
     <form onSubmit={onSubmit} className="w-full min-w-0 max-w-2xl space-y-6">
+      <p className="rounded-md border border-emerald-900/15 bg-emerald-50/80 px-3 py-2 text-sm text-emerald-950">
+        Each player may submit once per week. To fix a mistake after submitting, ask an admin to update scores on the admin
+        page.
+      </p>
+      {submitBlockReason ? (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" role="alert">
+          {submitBlockReason}
+        </p>
+      ) : null}
       <div>
         <label className="block text-sm font-medium text-zinc-700">Week</label>
         <select
@@ -723,7 +765,7 @@ export function SubmitRoundForm({
 
       <button
         type="submit"
-        disabled={status === "loading" || holesSorted.length < 9}
+        disabled={status === "loading" || holesSorted.length < 9 || Boolean(submitBlockReason)}
         className="min-h-[44px] w-full rounded-md bg-emerald-800 px-4 py-3 text-base font-medium text-white hover:bg-emerald-900 disabled:opacity-50 sm:w-auto"
       >
         {status === "loading" ? "Submitting…" : "Submit round"}

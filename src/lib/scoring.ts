@@ -105,3 +105,41 @@ export function formatPointsDisplay(a: number, b: number): string {
   if (aS === "—" || bS === "—") return "—";
   return `${aS} · ${bS}`;
 }
+
+export const SKINS_STANDARD_RULES = [
+  "Lowest net score on a hole wins the skin when that net is unique.",
+  "If three or more players share the low net, or everyone ties at the low net with two or more players, no skin is awarded on that hole.",
+] as const;
+
+export const SKINS_GROSS_OVER_NET_TIEBREAK_RULE =
+  "When exactly two players tie for the lowest net on a hole and one played straight up (no handicap strokes on that hole) while the other received one or more strokes, the straight-up gross score wins the skin. This does not apply when three or more players share the low net, or when both tied players received strokes on the hole.";
+
+export type SkinsHolePlayerScore = {
+  player_id: string;
+  net: number;
+  strokesOnHole: number;
+};
+
+export type SkinsHoleResolution =
+  | { kind: "none" }
+  | { kind: "skin"; winnerPlayerIds: [string] }
+  | { kind: "tie" }
+  | { kind: "gross_tiebreak"; winnerPlayerIds: [string] };
+
+/** Mirrors nhgl._recompute_skins_for_week hole winner logic for UI previews. */
+export function resolveSkinsHole(scores: SkinsHolePlayerScore[]): SkinsHoleResolution {
+  if (scores.length === 0) return { kind: "none" };
+  const lowestNet = Math.min(...scores.map((s) => s.net));
+  const tied = scores.filter((s) => s.net === lowestNet);
+  if (tied.length === 1) {
+    return { kind: "skin", winnerPlayerIds: [tied[0].player_id] };
+  }
+  if (tied.length === 2) {
+    const straightUp = tied.filter((s) => s.strokesOnHole === 0);
+    const withStrokes = tied.filter((s) => s.strokesOnHole > 0);
+    if (straightUp.length === 1 && withStrokes.length === 1) {
+      return { kind: "gross_tiebreak", winnerPlayerIds: [straightUp[0].player_id] };
+    }
+  }
+  return { kind: "tie" };
+}

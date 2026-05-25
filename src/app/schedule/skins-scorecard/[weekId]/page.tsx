@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { BackToScheduleButton } from "@/components/BackToScheduleButton";
+import { SkinsRulesNote } from "@/components/SkinsRulesNote";
 import { formatSeasonPhase } from "@/lib/nhgl";
 import { effectiveHandicapForRound, strokesReceivedOnHole, type CourseHole } from "@/lib/scoring";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -280,6 +281,9 @@ export default async function SkinsWeekScorecardPage(props: { params: Promise<{ 
           <h1 className="text-lg font-semibold text-emerald-950">Skins week scorecard</h1>
           <p className="text-xs text-emerald-900/75">{weekTitle}</p>
           <p className="mt-1 text-xs text-emerald-900/70">Everyone listed bought into skins for this week.</p>
+          <div className="px-3 pb-3">
+            <SkinsRulesNote />
+          </div>
         </div>
 
         {skinRows.length > 0 ? (

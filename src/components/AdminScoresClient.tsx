@@ -26,6 +26,27 @@ type MatchRoundsDraft = {
   holes: { hole_number: number; strokes: number }[];
 };
 
+type InProgressMatchup = {
+  match_id: string;
+  week_id: string;
+  team_a_id: string;
+  team_b_id: string;
+  week_number: number;
+  week_date: string;
+  week_phase: string;
+  matchup_label: string;
+  players_in: number;
+};
+
+type WeekMatchupGroup = {
+  weekId: string;
+  week_number: number;
+  week_date: string;
+  week_phase: string;
+  finalized: Row[];
+  inProgress: InProgressMatchup[];
+};
+
 type Row = {
   id: string;
   week_id: string;
@@ -99,24 +120,44 @@ function AccordionChevron({ group, className }: { group: "week" | "match"; class
   );
 }
 
-function groupByWeek(rows: Row[]) {
-  const map = new Map<string, Row[]>();
-  for (const r of rows) {
-    const list = map.get(r.week_id) ?? [];
-    list.push(r);
-    map.set(r.week_id, list);
+function buildWeekMatchupGroups(finalized: Row[], inProgress: InProgressMatchup[]): WeekMatchupGroup[] {
+  const map = new Map<string, WeekMatchupGroup>();
+  for (const r of finalized) {
+    const existing = map.get(r.week_id);
+    if (existing) {
+      existing.finalized.push(r);
+    } else {
+      map.set(r.week_id, {
+        weekId: r.week_id,
+        week_number: r.week_number,
+        week_date: r.week_date,
+        week_phase: r.week_phase,
+        finalized: [r],
+        inProgress: [],
+      });
+    }
   }
-  return [...map.entries()]
-    .map(([weekId, list]) => {
-      const first = list[0]!;
-      return {
-        weekId,
-        week_number: first.week_number,
-        week_date: first.week_date,
-        week_phase: first.week_phase,
-        rows: [...list].sort((a, b) => a.matchup_label.localeCompare(b.matchup_label)),
-      };
-    })
+  for (const m of inProgress) {
+    const existing = map.get(m.week_id);
+    if (existing) {
+      existing.inProgress.push(m);
+    } else {
+      map.set(m.week_id, {
+        weekId: m.week_id,
+        week_number: m.week_number,
+        week_date: m.week_date,
+        week_phase: m.week_phase,
+        finalized: [],
+        inProgress: [m],
+      });
+    }
+  }
+  return [...map.values()]
+    .map((g) => ({
+      ...g,
+      finalized: [...g.finalized].sort((a, b) => a.matchup_label.localeCompare(b.matchup_label)),
+      inProgress: [...g.inProgress].sort((a, b) => a.matchup_label.localeCompare(b.matchup_label)),
+    }))
     .sort((a, b) => a.week_number - b.week_number);
 }
 
@@ -162,6 +203,7 @@ function buildMatchDrafts(rounds: PlayerRoundAdmin[]): MatchRoundsDraft[] {
 export function AdminScoresClient() {
   const [secret, setSecret] = useState("");
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [inProgressMatchups, setInProgressMatchups] = useState<InProgressMatchup[]>([]);
   const [matchPlayerRoundsByMatch, setMatchPlayerRoundsByMatch] = useState<Record<string, PlayerRoundAdmin[]>>({});
   const [handicapRows, setHandicapRows] = useState<HandicapRow[]>([]);
   const [players, setPlayers] = useState<PlayerOption[]>([]);
@@ -210,6 +252,7 @@ export function AdminScoresClient() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
       setRows(json.data as Row[]);
+      setInProgressMatchups((json.in_progress_matchups as InProgressMatchup[] | undefined) ?? []);
       setMatchPlayerRoundsByMatch((json.match_player_rounds as Record<string, PlayerRoundAdmin[]> | undefined) ?? {});
       setHandicapRows((json.handicap_scores as HandicapRow[] | undefined) ?? []);
       setPlayers((json.players as PlayerOption[] | undefined) ?? []);
@@ -249,6 +292,7 @@ export function AdminScoresClient() {
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
       setRows(null);
+      setInProgressMatchups([]);
       setMatchPlayerRoundsByMatch({});
       setHandicapRows([]);
       setPlayers([]);
@@ -348,7 +392,10 @@ export function AdminScoresClient() {
     }
   }
 
-  const weekGroups = useMemo(() => (rows ? groupByWeek(rows) : []), [rows]);
+  const weekGroups = useMemo(
+    () => (rows ? buildWeekMatchupGroups(rows, inProgressMatchups) : []),
+    [rows, inProgressMatchups],
+  );
   const handicapSummary = useMemo<HandicapPlayerSummary[]>(() => {
     const byPlayer = new Map<string, HandicapRow[]>();
     for (const row of handicapRows) {
@@ -1062,7 +1109,8 @@ export function AdminScoresClient() {
           <div className="space-y-1">
             <h2 className="text-lg font-semibold text-emerald-950">Matchup scores</h2>
             <p className="text-sm text-zinc-600">
-              Open a week, then a matchup, to edit points, scorecards, and per-player rounds.
+              Open a week, then a matchup. Edit per-player hole scores anytime after someone submits; team points and
+              scorecards appear once the match is finalized.
             </p>
           </div>
           <div className="space-y-3">
@@ -1080,13 +1128,14 @@ export function AdminScoresClient() {
                     </span>
                   </span>
                   <span className="shrink-0 text-xs font-normal text-zinc-500">
-                    {g.rows.length} match{g.rows.length === 1 ? "" : "es"}
+                    {g.finalized.length + g.inProgress.length} match
+                    {g.finalized.length + g.inProgress.length === 1 ? "" : "es"}
                   </span>
                 </span>
               </summary>
               <div className="border-t border-zinc-100 px-2 py-2">
                 <ul className="space-y-2">
-                  {g.rows.map((r) => (
+                  {g.finalized.map((r) => (
                     <li key={r.id} className="rounded-md border border-zinc-100 bg-zinc-50/80">
                       <details className="group/match rounded-md">
                         <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium text-zinc-900 marker:hidden [&::-webkit-details-marker]:hidden">
@@ -1134,6 +1183,32 @@ export function AdminScoresClient() {
                               setErr("");
                               return load();
                             }}
+                            onMatchRoundsUpdated={() => load()}
+                            onError={setErr}
+                          />
+                        </div>
+                      </details>
+                    </li>
+                  ))}
+                  {g.inProgress.map((m) => (
+                    <li key={m.match_id} className="rounded-md border border-amber-200/80 bg-amber-50/40">
+                      <details className="group/match rounded-md">
+                        <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium text-zinc-900 marker:hidden [&::-webkit-details-marker]:hidden">
+                          <span className="flex items-center justify-between gap-3">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <AccordionChevron group="match" />
+                              <span className="truncate">{m.matchup_label}</span>
+                            </span>
+                            <span className="shrink-0 text-xs font-normal text-amber-900/80">
+                              In progress · {m.players_in}/4 in
+                            </span>
+                          </span>
+                        </summary>
+                        <div className="border-t border-amber-200/60 bg-white px-3 py-3">
+                          <InProgressMatchupEditor
+                            matchup={m}
+                            playerRounds={matchPlayerRoundsByMatch[m.match_id] ?? EMPTY_PLAYER_ROUNDS}
+                            authHeader={authHeader}
                             onMatchRoundsUpdated={() => load()}
                             onError={setErr}
                           />
@@ -1284,6 +1359,37 @@ function HandicapScoreEditor({
   );
 }
 
+function InProgressMatchupEditor({
+  matchup,
+  playerRounds,
+  authHeader,
+  onMatchRoundsUpdated,
+  onError,
+}: {
+  matchup: InProgressMatchup;
+  playerRounds: PlayerRoundAdmin[];
+  authHeader: () => { Authorization: string };
+  onMatchRoundsUpdated: () => Promise<void>;
+  onError: (msg: string) => void;
+}) {
+  return (
+    <div className="space-y-3 text-sm">
+      <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-950">
+        Match not finalized yet ({matchup.players_in} of 4 players in). Edit hole scores and skins below; team points
+        and the scorecard section appear after all players submit.
+      </p>
+      <MatchPlayerRoundsEditor
+        weekId={matchup.week_id}
+        matchId={matchup.match_id}
+        rounds={playerRounds}
+        authHeader={authHeader}
+        onUpdated={onMatchRoundsUpdated}
+        onError={onError}
+      />
+    </div>
+  );
+}
+
 function MatchPlayerRoundsEditor({
   weekId,
   matchId,
@@ -1363,8 +1469,7 @@ function MatchPlayerRoundsEditor({
       <div className="mt-4 border-t border-zinc-100 pt-3">
         <p className="text-xs font-medium text-zinc-700">Player rounds (Submit Round)</p>
         <p className="mt-1 text-xs text-zinc-500">
-          No per-player hole scores on file for this match (for example a legacy points-only submission, or not all
-          four players have submitted yet).
+          No per-player hole scores on file for this match yet (players submit via Submit Round).
         </p>
       </div>
     );

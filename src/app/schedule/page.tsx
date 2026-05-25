@@ -3,7 +3,13 @@ import { SkinsWeekDetailButton, type SkinsWeekDetail } from "@/components/SkinsW
 import { ScrollToScheduleAnchor } from "@/components/ScrollToScheduleAnchor";
 import { SupabaseConnectionHelp } from "@/components/SupabaseConnectionHelp";
 import { formatSeasonPhase } from "@/lib/nhgl";
-import { formatLeaguePointValue, formatPointsDisplay, handicapFromScores, strokesReceivedOnHole } from "@/lib/scoring";
+import {
+  effectiveHandicapForRound,
+  formatLeaguePointValue,
+  formatPointsDisplay,
+  resolveSkinsHole,
+  strokesReceivedOnHole,
+} from "@/lib/scoring";
 import { currentScheduleWeekId, SCHEDULE_CURRENT_WEEK_ANCHOR } from "@/lib/schedule";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -54,6 +60,7 @@ type SkinsRoundRow = {
   player_id: string;
   played_skins: boolean;
   which_nine: "front" | "back" | null;
+  handicap_at_submission: number | null;
 };
 
 type HoleScoreRow = {
@@ -112,7 +119,9 @@ export default async function SchedulePage() {
       supabase
         .from("score_submissions")
         .select("match_id, team_a_points, team_b_points, scorecard_image_url"),
-      supabase.from("player_rounds").select("id, match_id, week_id, player_id, played_skins, which_nine"),
+      supabase
+        .from("player_rounds")
+        .select("id, match_id, week_id, player_id, played_skins, which_nine, handicap_at_submission"),
       supabase.from("skins_hole_wins").select("week_id, player_id, hole"),
       supabase.from("skins_week_payouts").select("week_id, player_id, amount_won"),
       supabase.from("players").select("id, name"),
@@ -209,7 +218,8 @@ export default async function SchedulePage() {
         const rows = hhByPlayer[rr.player_id] ?? [];
         handicapByRoundId.set(
           rr.id,
-          handicapFromScores(
+          effectiveHandicapForRound(
+            rr.handicap_at_submission,
             rows.map((x) => ({
               played_date: x.played_date,
               score: Number(x.score),
@@ -222,7 +232,10 @@ export default async function SchedulePage() {
       }
 
       const roundById = new Map(skinsRounds.map((r) => [r.id, r]));
-      const scoresByWeekHole = new Map<string, Array<{ player_id: string; net: number }>>();
+      const scoresByWeekHole = new Map<
+        string,
+        Array<{ player_id: string; net: number; strokesOnHole: number }>
+      >();
       for (const hs of (holeScoresRows ?? []) as HoleScoreRow[]) {
         const rr = roundById.get(hs.player_round_id);
         if (!rr) continue;
@@ -236,7 +249,7 @@ export default async function SchedulePage() {
         const net = hs.strokes - dots;
         const key = `${rr.week_id}:${hs.hole_number}`;
         const list = scoresByWeekHole.get(key) ?? [];
-        list.push({ player_id: rr.player_id, net });
+        list.push({ player_id: rr.player_id, net, strokesOnHole: dots });
         scoresByWeekHole.set(key, list);
       }
 
@@ -248,10 +261,12 @@ export default async function SchedulePage() {
       }
 
       const holesByWeekPlayer = new Map<string, Map<string, number[]>>();
+      const skinWinnerByWeekHole = new Map<string, string>();
       for (const row of holeWins ?? []) {
         const wid = row.week_id as string;
         const pid = row.player_id as string;
         const hole = Number(row.hole);
+        skinWinnerByWeekHole.set(`${wid}:${hole}`, pid);
         const weekMap = holesByWeekPlayer.get(wid) ?? new Map<string, number[]>();
         const arr = weekMap.get(pid) ?? [];
         arr.push(hole);
@@ -316,12 +331,38 @@ export default async function SchedulePage() {
             return { hole, lowestNet: null, players: [], result: "none" as const };
           }
           const lowestNet = Math.min(...scores.map((s) => s.net));
-          const winners = scores.filter((s) => s.net === lowestNet).map((s) => playerName.get(s.player_id) ?? "?");
+          const resolution = resolveSkinsHole(scores);
+          const tiedNames = scores
+            .filter((s) => s.net === lowestNet)
+            .map((s) => playerName.get(s.player_id) ?? "?")
+            .sort((a, b) => a.localeCompare(b));
+          const storedWinnerId = skinWinnerByWeekHole.get(`${wk.id}:${hole}`);
+          if (storedWinnerId) {
+            const grossTiebreak =
+              resolution.kind === "gross_tiebreak" && resolution.winnerPlayerIds[0] === storedWinnerId;
+            const winnerName = playerName.get(storedWinnerId) ?? "?";
+            return {
+              hole,
+              lowestNet,
+              players: grossTiebreak ? tiedNames : [winnerName],
+              result: "skin" as const,
+              grossTiebreakWinner: grossTiebreak ? winnerName : undefined,
+            };
+          }
+          if (resolution.kind === "skin") {
+            const winnerId = resolution.winnerPlayerIds[0];
+            return {
+              hole,
+              lowestNet,
+              players: [playerName.get(winnerId) ?? "?"],
+              result: "skin" as const,
+            };
+          }
           return {
             hole,
             lowestNet,
-            players: winners,
-            result: winners.length === 1 ? ("skin" as const) : ("tie" as const),
+            players: tiedNames,
+            result: "tie" as const,
           };
         });
         skinsDetailByWeek.set(wk.id, {
