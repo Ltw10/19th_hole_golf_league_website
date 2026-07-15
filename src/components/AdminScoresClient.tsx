@@ -1408,6 +1408,7 @@ function MatchPlayerRoundsEditor({
   const baselineRef = useRef("");
   const [drafts, setDrafts] = useState<MatchRoundsDraft[]>([]);
   const [saving, setSaving] = useState(false);
+  const [flippingRoundId, setFlippingRoundId] = useState<string | null>(null);
 
   useEffect(() => {
     const next = buildMatchDrafts(rounds);
@@ -1416,6 +1417,7 @@ function MatchPlayerRoundsEditor({
   }, [rounds]);
 
   const hasChanges = JSON.stringify(drafts) !== baselineRef.current;
+  const busy = saving || flippingRoundId !== null;
 
   function updateSkins(roundId: string, played: boolean) {
     setDrafts((prev) =>
@@ -1464,6 +1466,42 @@ function MatchPlayerRoundsEditor({
     }
   }
 
+  async function flipNine(roundId: string) {
+    if (hasChanges) {
+      onError("Save or discard hole/skins edits before flipping front/back.");
+      return;
+    }
+    const meta = rounds.find((r) => r.id === roundId);
+    const current = meta?.which_nine?.toLowerCase() === "back" ? "back" : "front";
+    const next = current === "back" ? "front" : "back";
+    if (
+      !window.confirm(
+        `Flip ${meta?.player_name ?? "this player"} from ${current} nine to ${next} nine? Hole numbers will remap; skins and match points will recompute. All players in a match (and skins that week) must share the same nine.`,
+      )
+    ) {
+      return;
+    }
+    onError("");
+    setFlippingRoundId(roundId);
+    try {
+      const res = await fetch("/api/admin/match-rounds", {
+        method: "POST",
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ player_round_id: roundId }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        onError(json.error ?? "Flip failed");
+        return;
+      }
+      await onUpdated();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Flip failed");
+    } finally {
+      setFlippingRoundId(null);
+    }
+  }
+
   if (rounds.length === 0) {
     return (
       <div className="mt-4 border-t border-zinc-100 pt-3">
@@ -1475,35 +1513,59 @@ function MatchPlayerRoundsEditor({
     );
   }
 
-  const sideLabel =
-    rounds[0]?.which_nine?.toLowerCase() === "back" ? "Back nine (holes 10–18)" : "Front nine (holes 1–9)";
+  const sideLabels = [...new Set(rounds.map((r) => (r.which_nine?.toLowerCase() === "back" ? "back" : "front")))];
+  const sideSummary =
+    sideLabels.length === 1
+      ? sideLabels[0] === "back"
+        ? "Back nine (holes 10–18)"
+        : "Front nine (holes 1–9)"
+      : "Mixed nines in this match";
 
   return (
     <div className="mt-4 space-y-4 border-t border-zinc-100 pt-3">
       <div>
         <p className="text-xs font-medium text-zinc-700">Player rounds (Submit Round)</p>
         <p className="mt-0.5 text-xs text-zinc-500">
-          Edit strokes and skins for the week. Saving runs the same recomputation as a fresh submission ({sideLabel}).
+          Edit strokes and skins for the week. Saving runs the same recomputation as a fresh submission (
+          {sideSummary}). Use Flip nine to switch front ↔ back for a player.
         </p>
       </div>
       {drafts.map((d) => {
         const meta = rounds.find((r) => r.id === d.player_round_id);
+        const currentNine = meta?.which_nine?.toLowerCase() === "back" ? "back" : "front";
+        const flipTarget = currentNine === "back" ? "front" : "back";
+        const flipping = flippingRoundId === d.player_round_id;
         return (
           <div key={d.player_round_id} className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50/80 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-sm">
                 <span className="font-medium text-zinc-900">{meta?.player_name ?? "Player"}</span>
                 <span className="text-zinc-500"> · {meta?.team_name ?? "?"}</span>
+                <span className="ml-2 text-xs text-zinc-500">
+                  {currentNine === "back" ? "Back nine" : "Front nine"}
+                </span>
               </div>
-              <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={d.played_skins}
-                  onChange={(e) => updateSkins(d.player_round_id, e.target.checked)}
-                  className="rounded border-zinc-400"
-                />
-                Skins this week
-              </label>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-700">
+                  <input
+                    type="checkbox"
+                    checked={d.played_skins}
+                    onChange={(e) => updateSkins(d.player_round_id, e.target.checked)}
+                    disabled={busy}
+                    className="rounded border-zinc-400"
+                  />
+                  Skins this week
+                </label>
+                <button
+                  type="button"
+                  disabled={busy || hasChanges}
+                  title={hasChanges ? "Save hole/skins edits first" : undefined}
+                  className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs font-medium text-zinc-800 hover:bg-zinc-100 disabled:opacity-50"
+                  onClick={() => void flipNine(d.player_round_id)}
+                >
+                  {flipping ? "Flipping…" : `Flip to ${flipTarget}`}
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <div className="flex min-w-max gap-1.5">
@@ -1529,7 +1591,7 @@ function MatchPlayerRoundsEditor({
       })}
       <button
         type="button"
-        disabled={saving || !hasChanges}
+        disabled={busy || !hasChanges}
         className="rounded-md bg-zinc-800 px-3 py-2 text-sm text-white disabled:opacity-50"
         onClick={() => void saveRounds()}
       >

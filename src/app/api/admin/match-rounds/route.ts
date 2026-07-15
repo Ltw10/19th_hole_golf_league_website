@@ -116,3 +116,94 @@ export async function PATCH(req: Request) {
 
   return NextResponse.json({ ok: true });
 }
+
+/**
+ * Flip one player round between front (1–9) and back (10–18): updates which_nine,
+ * remaps hole_number values, then recomputes skins + match points.
+ */
+export async function POST(req: Request) {
+  if (!verify(req)) return unauthorized();
+
+  let body: { player_round_id?: string };
+  try {
+    body = (await req.json()) as { player_round_id?: string };
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const playerRoundId = body.player_round_id?.trim();
+  if (!playerRoundId) {
+    return NextResponse.json({ error: "player_round_id is required." }, { status: 400 });
+  }
+
+  const admin = createAdminSupabaseClient();
+
+  const { data: round, error: roundErr } = await admin
+    .from("player_rounds")
+    .select("id, match_id, week_id, which_nine")
+    .eq("id", playerRoundId)
+    .maybeSingle();
+
+  if (roundErr) return NextResponse.json({ error: roundErr.message }, { status: 500 });
+  if (!round) return NextResponse.json({ error: "Player round not found." }, { status: 404 });
+
+  const matchId = round.match_id as string;
+  const weekId = round.week_id as string;
+  const current = ((round.which_nine as string | null) ?? "front").toLowerCase() === "back" ? "back" : "front";
+  const next = current === "back" ? "front" : "back";
+  const targetHoles = next === "back" ? [10, 11, 12, 13, 14, 15, 16, 17, 18] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+  const { data: holes, error: holesErr } = await admin
+    .from("player_hole_scores")
+    .select("hole_number, strokes")
+    .eq("player_round_id", playerRoundId);
+
+  if (holesErr) return NextResponse.json({ error: holesErr.message }, { status: 500 });
+  const holeRows = holes ?? [];
+  if (holeRows.length !== 9) {
+    return NextResponse.json(
+      { error: "Round must have exactly nine hole scores before flipping." },
+      { status: 400 },
+    );
+  }
+
+  // Keep stroke order by current hole number; relabel onto the other nine.
+  const sorted = [...holeRows].sort((a, b) => Number(a.hole_number) - Number(b.hole_number));
+  const remapped = targetHoles.map((hn, i) => ({
+    hole_number: hn,
+    strokes: Number(sorted[i].strokes),
+  }));
+
+  const holeErr = validateHoles(next, remapped);
+  if (holeErr) {
+    return NextResponse.json(
+      { error: `Cannot flip this round (${current} → ${next}): ${holeErr}` },
+      { status: 400 },
+    );
+  }
+
+  const { error: upErr } = await admin
+    .from("player_rounds")
+    .update({ which_nine: next })
+    .eq("id", playerRoundId);
+  if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
+
+  const { error: delErr } = await admin.from("player_hole_scores").delete().eq("player_round_id", playerRoundId);
+  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
+
+  const inserts = remapped.map((h) => ({
+    player_round_id: playerRoundId,
+    hole_number: h.hole_number,
+    strokes: h.strokes,
+  }));
+  const { error: insErr } = await admin.from("player_hole_scores").insert(inserts);
+  if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+
+  const { error: skinsErr } = await admin.rpc("_recompute_skins_for_week", { p_week_id: weekId });
+  if (skinsErr) return NextResponse.json({ error: skinsErr.message }, { status: 500 });
+
+  const { error: matchErr } = await admin.rpc("_recompute_match_points", { p_match_id: matchId });
+  if (matchErr) return NextResponse.json({ error: matchErr.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true, which_nine: next });
+}
