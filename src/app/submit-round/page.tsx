@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 import { SubmitRoundForm } from "@/components/SubmitRoundForm";
 import { handicapFromScores, type ScoreRow } from "@/lib/scoring";
-import { SKINS_SUBSTITUTES_TEAM_NAME } from "@/lib/nhgl";
+import { SUBSTITUTES_TEAM_NAME } from "@/lib/nhgl";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ export default async function SubmitRoundPage(props: {
         .from("handicap_helper_scores")
         .select("player_id, played_date, score, par, created_at")
         .order("played_date", { ascending: false }),
-      supabase.from("teams").select("id").eq("name", SKINS_SUBSTITUTES_TEAM_NAME).maybeSingle(),
+      supabase.from("teams").select("id").eq("name", SUBSTITUTES_TEAM_NAME).maybeSingle(),
       supabase
         .from("player_rounds")
         .select("week_id, match_id, player_id, subbing_for_player_id"),

@@ -6,16 +6,18 @@ export const SCORECARDS_BUCKET = "nhgl-scorecards" as const;
 /** Championship week after removing handicap weeks from the schedule (see migrations). */
 export const CHAMPIONSHIP_WEEK_NUMBER = 16 as const;
 
-/** Roster bucket for skins-only guests; must not appear in team standings UI. */
-export const SKINS_SUBSTITUTES_TEAM_NAME = "Skins substitutes" as const;
-
-/** Players created from Handicap helper “add name” are assigned to this team. */
-export const HANDICAP_HELPER_TEAM_NAME = "Handicap helper" as const;
+/**
+ * Guest bucket for matchup substitutes and Handicap helper “add name” players.
+ * Must not appear in team standings. League membership is `players.is_league_member`.
+ */
+export const SUBSTITUTES_TEAM_NAME = "Substitutes" as const;
 
 export function filterTeamStandingsRows<T extends { team_name: string }>(rows: T[]): T[] {
   const hiddenTeamNames = new Set([
-    SKINS_SUBSTITUTES_TEAM_NAME.toLowerCase(),
-    HANDICAP_HELPER_TEAM_NAME.toLowerCase(),
+    SUBSTITUTES_TEAM_NAME.toLowerCase(),
+    // Legacy names if an old DB still has leftover teams during rollout
+    "skins substitutes",
+    "handicap helper",
   ]);
 
   return rows.filter((r) => !hiddenTeamNames.has(String(r.team_name).toLowerCase()));

@@ -120,7 +120,7 @@ export function HandicapHelperClient({
     }
     setAddPlayerLoading(true);
     setAddPlayerError("");
-    const { data, error } = await supabase.rpc("create_handicap_helper_player", { p_name: name });
+    const { data, error } = await supabase.rpc("create_substitute_player", { p_name: name });
     setAddPlayerLoading(false);
     if (error) {
       setAddPlayerError(error.message);
@@ -599,7 +599,7 @@ export function HandicapHelperClient({
 
       <section className="space-y-2">
         <h2 className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-emerald-900/70">
-          Subs
+          Substitutes
         </h2>
         <div className={scorecardShell}>
           <div className="border-b-2 border-emerald-900/25 bg-[#e8efe3] px-3 py-2 text-center">
@@ -609,7 +609,9 @@ export function HandicapHelperClient({
           </div>
           <div className="overflow-x-auto">
             {subsSummary.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-emerald-900/70">No sub scores yet.</p>
+              <p className="px-4 py-8 text-center text-sm text-emerald-900/70">
+                No substitute scores yet.
+              </p>
             ) : (
               <table className="w-full border-collapse text-sm">
                 <thead>

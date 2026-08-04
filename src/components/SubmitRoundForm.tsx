@@ -320,7 +320,7 @@ export function SubmitRoundForm({
     if (!name) return;
     setAddSubLoading(true);
     setAddSubError("");
-    const { data, error } = await supabase.rpc("create_skins_substitute_player", {
+    const { data, error } = await supabase.rpc("create_substitute_player", {
       p_name: name,
     });
     setAddSubLoading(false);
@@ -485,7 +485,7 @@ export function SubmitRoundForm({
         </p>
         {!subsTeamId ? (
           <p className="mt-2 text-xs text-amber-800">
-            Substitutes aren&apos;t available until database migrations are applied (Skins substitutes team).
+            Substitutes aren&apos;t available until database migrations are applied (Substitutes team).
           </p>
         ) : null}
         <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
