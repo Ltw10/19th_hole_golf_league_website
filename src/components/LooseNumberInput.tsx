@@ -108,6 +108,12 @@ export type LooseNullableIntInputProps = Omit<
 > & {
   value: number | null;
   onValueChange: (n: number | null) => void;
+  /** When true, allows leading +/− (for plus handicaps and signed ints). */
+  allowSigned?: boolean;
+  /** Format committed value for display (e.g. league +N for plus handicaps). */
+  formatValue?: (n: number) => string;
+  /** Parse typed text; return null for empty/invalid. */
+  parseValue?: (raw: string) => number | null;
 };
 
 /** Integer input that can be cleared to mean “no value” (null). */
@@ -116,21 +122,28 @@ export function LooseNullableIntInput({
   onValueChange,
   min,
   max,
+  allowSigned = false,
+  formatValue,
+  parseValue,
   className,
   disabled,
   onBlur,
   onFocus,
   ...rest
 }: LooseNullableIntInputProps) {
-  const [text, setText] = useState(() => (value == null ? "" : String(value)));
+  const display = (n: number | null) => {
+    if (n == null) return "";
+    return formatValue ? formatValue(n) : String(n);
+  };
+  const [text, setText] = useState(() => display(value));
   const focused = useRef(false);
 
   useEffect(() => {
     if (!focused.current) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- sync display when `value` prop updates from parent while not editing
-      setText(value == null ? "" : String(value));
+      setText(display(value));
     }
-  }, [value]);
+  }, [value, formatValue]);
 
   return (
     <input
@@ -143,7 +156,7 @@ export function LooseNullableIntInput({
       value={text}
       onFocus={(e) => {
         focused.current = true;
-        setText(value == null ? "" : String(value));
+        setText(display(value));
         onFocus?.(e);
       }}
       onBlur={(e) => {
@@ -154,15 +167,29 @@ export function LooseNullableIntInput({
           onBlur?.(e);
           return;
         }
-        const n = parseInt(text.trim(), 10);
-        const next = Number.isFinite(n) ? clamp(n, min, max) : value;
+        const parsed = parseValue
+          ? parseValue(text)
+          : (() => {
+              const n = parseInt(text.trim(), 10);
+              return Number.isFinite(n) ? n : null;
+            })();
+        if (parsed == null) {
+          setText(display(value));
+          onBlur?.(e);
+          return;
+        }
+        const next = clamp(parsed, min, max);
         onValueChange(next);
-        setText(next == null ? "" : String(next));
+        setText(display(next));
         onBlur?.(e);
       }}
       onChange={(e) => {
         const v = e.target.value;
-        if (v === "" || /^\d+$/.test(v)) setText(v);
+        if (allowSigned || parseValue) {
+          if (v === "" || /^[+-]?\d*$/.test(v)) setText(v);
+        } else if (v === "" || /^\d+$/.test(v)) {
+          setText(v);
+        }
       }}
     />
   );

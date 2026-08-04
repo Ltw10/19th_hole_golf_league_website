@@ -3,6 +3,7 @@ import { BackToScheduleButton } from "@/components/BackToScheduleButton";
 import { VirtualDotsPreview } from "@/components/VirtualDotsPreview";
 import {
   effectiveHandicapForRound,
+  formatLeagueHandicap,
   handicapFromScores,
   strokesFromTeamHandicapDiffOnHole,
   strokesReceivedOnHole,
@@ -437,7 +438,7 @@ export default async function VirtualScorecardPage(props: { params: Promise<{ ma
                     className={`border-b border-emerald-900/15 ${idx % 2 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"}`}
                   >
                     <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono text-sm tabular-nums text-emerald-900">
-                      {hcapEff === null ? "—" : hcapEff}
+                      {hcapEff === null ? "—" : formatLeagueHandicap(hcapEff)}
                     </td>
                     <td className="border-r border-emerald-900/15 px-3 py-2 text-left font-medium text-emerald-950">
                       {nameMain}

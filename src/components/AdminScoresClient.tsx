@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LooseNullableIntInput, LooseNumberInput } from "@/components/LooseNumberInput";
+import { formatLeagueHandicap, parseLeagueHandicapInput } from "@/lib/scoring";
 import { formatSeasonPhase } from "@/lib/nhgl";
 
 type PlayerRoundAdmin = {
@@ -162,10 +163,7 @@ function buildWeekMatchupGroups(finalized: Row[], inProgress: InProgressMatchup[
 }
 
 function formatVersusParHandicap(diff: number): string {
-  if (!Number.isFinite(diff)) return "—";
-  if (diff === 0) return "0";
-  if (diff < 0) return `+${Math.abs(diff)}`;
-  return String(diff);
+  return formatLeagueHandicap(diff);
 }
 
 function formatDate(iso: string) {
@@ -1069,6 +1067,11 @@ export function AdminScoresClient() {
                               <span className="font-mono tabular-nums text-emerald-900">
                                 Vs par {formatVersusParHandicap(r.score - r.par)}
                               </span>
+                              {r.handicap_at_submission != null ? (
+                                <span className="font-mono tabular-nums text-zinc-600">
+                                  Saved hcp {formatLeagueHandicap(r.handicap_at_submission)}
+                                </span>
+                              ) : null}
                             </div>
                             <div className="flex flex-wrap gap-2">
                               <button
@@ -1312,12 +1315,20 @@ function HandicapScoreEditor({
           <label className="block w-36">
             Saved handicap
             <LooseNullableIntInput
-              min={0}
-              max={99}
+              min={-54}
+              max={54}
+              allowSigned
+              formatValue={formatLeagueHandicap}
+              parseValue={parseLeagueHandicapInput}
+              placeholder="+1 or 5"
+              title="Plus handicaps: type +1 (stores as −1). Regular: type 5."
               className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-900"
               value={draft.handicap_at_submission}
               onValueChange={(n) => setDraft({ ...draft, handicap_at_submission: n })}
             />
+            <span className="mt-0.5 block text-[0.65rem] leading-tight text-zinc-500">
+              Plus: +1 · regular: 5
+            </span>
           </label>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -3,7 +3,12 @@ import type { ReactNode } from "react";
 import { BackToScheduleButton } from "@/components/BackToScheduleButton";
 import { SkinsRulesNote } from "@/components/SkinsRulesNote";
 import { formatSeasonPhase } from "@/lib/nhgl";
-import { effectiveHandicapForRound, strokesReceivedOnHole, type CourseHole } from "@/lib/scoring";
+import {
+  effectiveHandicapForRound,
+  formatLeagueHandicap,
+  strokesReceivedOnHole,
+  type CourseHole,
+} from "@/lib/scoring";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -411,7 +416,7 @@ export default async function SkinsWeekScorecardPage(props: { params: Promise<{ 
                 <th
                   className="border-r border-emerald-900/15 px-3 py-1.5 text-left text-[0.65rem] font-semibold uppercase tracking-wide"
                   colSpan={3}
-                  title="Stroke index for this hole (1 = hardest). Handicap strokes are given on the hardest holes first."
+                  title="Stroke index for this hole (1 = hardest). Strokes received go to hardest holes first; plus handicaps give strokes on easiest holes first."
                 >
                   Stroke index
                 </th>
@@ -467,7 +472,7 @@ export default async function SkinsWeekScorecardPage(props: { params: Promise<{ 
                       {matchupCell}
                     </td>
                     <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono tabular-nums text-emerald-900">
-                      {hcap}
+                      {formatLeagueHandicap(hcap)}
                     </td>
                     {holes.map((h) => {
                       const gross = strokesByRoundHole.get(`${r.id}:${h}`);
@@ -517,7 +522,9 @@ export default async function SkinsWeekScorecardPage(props: { params: Promise<{ 
                               title={
                                 dots > 0
                                   ? `${dots} handicap stroke${dots === 1 ? "" : "s"} received on this hole (stroke index ${strokeIndexByHole.get(h) ?? "?"})`
-                                  : undefined
+                                  : dots < 0
+                                    ? `${Math.abs(dots)} plus-handicap stroke${Math.abs(dots) === 1 ? "" : "s"} given on this hole (stroke index ${strokeIndexByHole.get(h) ?? "?"})`
+                                    : undefined
                               }
                             >
                               {dots > 0
@@ -528,7 +535,17 @@ export default async function SkinsWeekScorecardPage(props: { params: Promise<{ 
                                       aria-hidden
                                     />
                                   ))
-                                : null}
+                                : dots < 0
+                                  ? Array.from({ length: Math.abs(dots) }, (_, i) => (
+                                      <span
+                                        key={i}
+                                        className="inline-flex h-2.5 min-w-[0.65rem] items-center justify-center rounded-[1px] border border-emerald-900/70 px-0.5 text-[0.55rem] font-bold leading-none text-emerald-950"
+                                        aria-hidden
+                                      >
+                                        +
+                                      </span>
+                                    ))
+                                  : null}
                             </div>
                             <div className="flex min-h-[1.5rem] items-center justify-center">{scoreFace}</div>
                           </div>

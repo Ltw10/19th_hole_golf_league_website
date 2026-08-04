@@ -98,9 +98,14 @@ export async function PATCH(req: Request, { params }: Params) {
   }
   if (
     body.handicap_at_submission != null &&
-    (!Number.isFinite(body.handicap_at_submission) || body.handicap_at_submission < 0 || body.handicap_at_submission > 99)
+    (!Number.isFinite(body.handicap_at_submission) ||
+      body.handicap_at_submission < -54 ||
+      body.handicap_at_submission > 54)
   ) {
-    return NextResponse.json({ error: "Handicap must be between 0 and 99." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Handicap must be between −54 and 54 (use negative or +N for plus handicaps)." },
+      { status: 400 },
+    );
   }
 
   const admin = createAdminSupabaseClient();

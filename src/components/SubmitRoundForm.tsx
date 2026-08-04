@@ -7,6 +7,7 @@ import { LooseNumberInput } from "@/components/LooseNumberInput";
 import { formatSeasonPhase, SCORECARDS_BUCKET } from "@/lib/nhgl";
 import { getSubmitRoundBlockReason, type ExistingPlayerRound } from "@/lib/submit-round";
 import {
+  formatLeagueHandicap,
   handicapFromScores,
   holeNet,
   type CourseHole,
@@ -631,9 +632,14 @@ export function SubmitRoundForm({
         <p className="text-sm font-medium text-zinc-700">Strokes — Hickory Sticks</p>
         <p className="mt-1 text-xs text-zinc-500">
           Handicap for net preview (strokes before this round):{" "}
-          <span className="font-mono font-semibold text-emerald-900">{effectiveHandicap}</span>
+          <span className="font-mono font-semibold text-emerald-900">
+            {formatLeagueHandicap(effectiveHandicap)}
+          </span>
           {playerId && handicapByPlayer[playerId] !== undefined ? (
-            <span className="text-zinc-400"> — roster summary {handicapByPlayer[playerId]}</span>
+            <span className="text-zinc-400">
+              {" "}
+              — roster summary {formatLeagueHandicap(handicapByPlayer[playerId])}
+            </span>
           ) : null}
           <span className="mt-1 block text-zinc-600">
             Enter gross in each box, or tap <span className="font-medium text-emerald-900">Choose scores</span> above

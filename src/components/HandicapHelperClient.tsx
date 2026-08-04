@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { formatLeagueHandicap } from "@/lib/scoring";
 
 export type HandicapSummaryRow = {
   player_id: string;
@@ -676,11 +677,7 @@ export function HandicapHelperClient({
 
 /** Handicap value is stored as rounded integer: over par as plain number; under par as +N. */
 function formatVersusParHandicap(diff: number): string {
-  if (!Number.isFinite(diff)) return "—";
-  const v = Math.round(diff);
-  if (v === 0) return "0";
-  if (v < 0) return `+${Math.abs(v)}`;
-  return String(v);
+  return formatLeagueHandicap(diff);
 }
 
 function formatDisplayDate(iso: string) {

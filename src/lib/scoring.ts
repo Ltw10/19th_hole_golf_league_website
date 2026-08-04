@@ -16,6 +16,30 @@ export type ScoreRow = {
   created_at?: string;
 };
 
+/**
+ * League handicap display: over-par as plain number, under-par / plus as +N.
+ * Stored value is negative for plus handicaps (e.g. +1 displays from −1).
+ */
+export function formatLeagueHandicap(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const v = Math.round(n);
+  if (v === 0) return "0";
+  if (v < 0) return `+${Math.abs(v)}`;
+  return String(v);
+}
+
+/**
+ * Parse admin/UI handicap text. Golf plus notation "+1" stores as −1.
+ * Plain "1" is one stroke received; "-1" is also plus one.
+ */
+export function parseLeagueHandicapInput(raw: string): number | null {
+  const t = raw.trim();
+  if (t === "" || t === "+" || t === "-") return null;
+  if (/^\+\d+$/.test(t)) return -parseInt(t.slice(1), 10);
+  if (/^-?\d+$/.test(t)) return parseInt(t, 10);
+  return null;
+}
+
 /** Uses frozen `handicap_at_submission` when present (same rule as Postgres match recompute). */
 export function effectiveHandicapForRound(
   snapshot: number | null | undefined,
@@ -23,7 +47,7 @@ export function effectiveHandicapForRound(
   excludePlayedDate?: string,
 ): number {
   if (snapshot !== null && snapshot !== undefined) {
-    return Math.max(0, Math.round(snapshot));
+    return Math.round(snapshot);
   }
   return handicapFromScores(rows, excludePlayedDate);
 }
@@ -48,20 +72,29 @@ export function handicapFromScores(rows: ScoreRow[], excludePlayedDate?: string)
 
 /**
  * `holes` must be exactly the nine holes being played (1–9 or 10–18).
+ * Positive handicap → receive strokes on hardest holes (lowest SI).
+ * Negative (plus) handicap → give strokes on easiest holes (highest SI); returns negative.
  */
 export function strokesReceivedOnHole(
   holes: CourseHole[],
   handicapEff: number,
   holeNumber: number,
 ): number {
-  const hEff = Math.max(0, Math.round(handicapEff));
-  const base = Math.floor(hEff / 9);
-  const extra = hEff % 9;
-  if (extra === 0) return base;
+  const hEff = Math.round(handicapEff);
+  if (hEff === 0) return 0;
+  const mag = Math.abs(hEff);
+  const base = Math.floor(mag / 9);
+  const extra = mag % 9;
   const hole = holes.find((x) => x.hole_number === holeNumber);
-  if (!hole) return base;
-  const lower = holes.filter((x) => x.stroke_index < hole.stroke_index).length;
-  return lower < extra ? base + 1 : base;
+  if (!hole) return hEff > 0 ? base : -base;
+  if (hEff > 0) {
+    if (extra === 0) return base;
+    const lower = holes.filter((x) => x.stroke_index < hole.stroke_index).length;
+    return lower < extra ? base + 1 : base;
+  }
+  if (extra === 0) return -base;
+  const higher = holes.filter((x) => x.stroke_index > hole.stroke_index).length;
+  return higher < extra ? -(base + 1) : -base;
 }
 
 /** Match play: spread only |team A − team B| across the nine (same allocation rule); higher-handicap team receives those strokes on each hole. */
@@ -71,8 +104,8 @@ export function strokesFromTeamHandicapDiffOnHole(
   teamHcpB: number,
   holeNumber: number,
 ): { strokesA: number; strokesB: number } {
-  const a = Math.max(0, Math.round(teamHcpA));
-  const b = Math.max(0, Math.round(teamHcpB));
+  const a = Math.round(teamHcpA);
+  const b = Math.round(teamHcpB);
   const d = a - b;
   const mag = Math.abs(d);
   if (mag === 0) return { strokesA: 0, strokesB: 0 };
