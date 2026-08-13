@@ -131,7 +131,7 @@ export default async function SubmitRoundPage(props: {
   if (matchIdFromUrl) {
     const match = matches.find((x) => x.id === matchIdFromUrl);
     const week = match ? weeks.find((x) => x.id === match.week_id) : undefined;
-    if (match?.team_a_id && match.team_b_id && week && week.phase !== "handicap") {
+    if (match?.team_a_id && match.team_b_id && week && week.phase !== "handicap" && !week.is_cancelled) {
       initialWeekId = week.id;
       initialMatchId = match.id;
     }

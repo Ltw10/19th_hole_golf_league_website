@@ -1,4 +1,5 @@
 -- Seed: league teams, skins substitute team, players, 16 weeks (15 regular + championship), matches
+-- Later migration 20260812120000 adds Week 15 weather cancel + Week 17 championship.
 
 INSERT INTO nhgl.teams (name) VALUES
   ('Luke & Jordan'),

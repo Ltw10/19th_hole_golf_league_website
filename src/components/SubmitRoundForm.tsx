@@ -16,7 +16,13 @@ import {
 
 type Team = { id: string; name: string };
 type Player = { id: string; name: string; team_id: string; is_league_member: boolean };
-type Week = { id: string; week_number: number; week_date: string; phase: string };
+type Week = {
+  id: string;
+  week_number: number;
+  week_date: string;
+  phase: string;
+  is_cancelled?: boolean;
+};
 type Match = {
   id: string;
   week_id: string;
@@ -200,7 +206,7 @@ export function SubmitRoundForm({
   }, [teams]);
 
   const scoreWeeks = useMemo(
-    () => weeks.filter((w) => w.phase !== "handicap"),
+    () => weeks.filter((w) => w.phase !== "handicap" && !w.is_cancelled),
     [weeks],
   );
 

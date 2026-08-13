@@ -3,8 +3,8 @@ export const NHGL_SCHEMA = "nhgl" as const;
 
 export const SCORECARDS_BUCKET = "nhgl-scorecards" as const;
 
-/** Championship week after removing handicap weeks from the schedule (see migrations). */
-export const CHAMPIONSHIP_WEEK_NUMBER = 16 as const;
+/** Championship week (after Week 15 weather cancel pushed the final RS week to 16). */
+export const CHAMPIONSHIP_WEEK_NUMBER = 17 as const;
 
 /**
  * Guest bucket for matchup substitutes and Handicap helper “add name” players.
@@ -24,7 +24,8 @@ export function filterTeamStandingsRows<T extends { team_name: string }>(rows: T
 }
 
 /** User-facing label for `nhgl.season_phase` values from the API. */
-export function formatSeasonPhase(phase: string): string {
+export function formatSeasonPhase(phase: string, opts?: { isCancelled?: boolean }): string {
+  if (opts?.isCancelled) return "Cancelled";
   switch (phase) {
     case "regular":
       return "Regular Season";

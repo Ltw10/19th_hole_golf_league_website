@@ -28,10 +28,14 @@ export function todayYmdInLeagueTimezone(now = new Date()): string {
 }
 
 /** UUID of the season week row that holds the next matchup (see module docstring). */
-export function currentScheduleWeekId(weeks: { id: string; week_date: string }[]): string | null {
+export function currentScheduleWeekId(
+  weeks: { id: string; week_date: string; is_cancelled?: boolean }[],
+): string | null {
   if (weeks.length === 0) return null;
   const today = todayYmdInLeagueTimezone();
-  const sorted = [...weeks].sort((a, b) => a.week_date.localeCompare(b.week_date));
+  const sorted = [...weeks]
+    .filter((w) => !w.is_cancelled)
+    .sort((a, b) => a.week_date.localeCompare(b.week_date));
   const next = sorted.find((w) => w.week_date >= today);
   return next?.id ?? null;
 }

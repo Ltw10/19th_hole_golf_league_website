@@ -2,6 +2,7 @@ import Link from "next/link";
 import { SkinsWeekDetailButton, type SkinsWeekDetail } from "@/components/SkinsWeekDetailButton";
 import { ScrollToScheduleAnchor } from "@/components/ScrollToScheduleAnchor";
 import { SupabaseConnectionHelp } from "@/components/SupabaseConnectionHelp";
+import { WeatherCancelWeek } from "@/components/WeatherCancelWeek";
 import { formatSeasonPhase } from "@/lib/nhgl";
 import {
   effectiveHandicapForRound,
@@ -21,6 +22,8 @@ type Week = {
   week_number: number;
   week_date: string;
   phase: string;
+  is_cancelled?: boolean;
+  notes?: string | null;
 };
 type Match = {
   id: string;
@@ -409,10 +412,27 @@ export default async function SchedulePage() {
       {!loadError && (
         <ul className="space-y-7">
           {weeks.map((w) => {
+            const cancelled = Boolean(w.is_cancelled);
             const ms = byWeek.get(w.id) ?? [];
             const skinRows = skinsByWeek.get(w.id) ?? [];
             const pot = skinsPotByWeek.get(w.id) ?? 0;
             const skinsPlayers = skinsBuyerCountByWeek.get(w.id) ?? 0;
+
+            if (cancelled) {
+              return (
+                <li
+                  key={w.id}
+                  className="overflow-hidden rounded-sm border-2 border-slate-700/60 shadow-[3px_4px_0_0_rgba(15,23,42,0.2)]"
+                >
+                  <WeatherCancelWeek
+                    weekNumber={w.week_number}
+                    weekDate={w.week_date}
+                    notes={w.notes ?? null}
+                  />
+                </li>
+              );
+            }
+
             return (
               <li
                 key={w.id}
@@ -434,7 +454,12 @@ export default async function SchedulePage() {
                           </span>
                         ) : null}
                       </p>
-                      <h2 className="text-lg font-bold text-emerald-950">{formatSeasonPhase(w.phase)}</h2>
+                      <h2 className="text-lg font-bold text-emerald-950">
+                        {formatSeasonPhase(w.phase, { isCancelled: cancelled })}
+                      </h2>
+                      {w.notes && w.week_number === 16 ? (
+                        <p className="mt-1 max-w-xl text-xs text-emerald-900/70">{w.notes}</p>
+                      ) : null}
                     </div>
                     <time dateTime={w.week_date} className="font-mono text-xs text-emerald-900/80 sm:text-sm">
                       {formatDate(w.week_date)}
