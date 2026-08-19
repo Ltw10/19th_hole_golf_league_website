@@ -75,6 +75,11 @@ type WeekOption = {
   phase: string;
 };
 
+type TeamOption = {
+  id: string;
+  name: string;
+};
+
 type PlayerOption = {
   id: string;
   name: string;
@@ -205,7 +210,10 @@ export function AdminScoresClient() {
   const [matchPlayerRoundsByMatch, setMatchPlayerRoundsByMatch] = useState<Record<string, PlayerRoundAdmin[]>>({});
   const [handicapRows, setHandicapRows] = useState<HandicapRow[]>([]);
   const [players, setPlayers] = useState<PlayerOption[]>([]);
+  const [teams, setTeams] = useState<TeamOption[]>([]);
   const [weeks, setWeeks] = useState<WeekOption[]>([]);
+  const [championshipTeamAId, setChampionshipTeamAId] = useState("");
+  const [championshipTeamBId, setChampionshipTeamBId] = useState("");
   const [cleanupWeekId, setCleanupWeekId] = useState("");
   const [recomputeWeekId, setRecomputeWeekId] = useState("");
   const [selectedHandicapPlayerId, setSelectedHandicapPlayerId] = useState<string | null>(null);
@@ -254,7 +262,21 @@ export function AdminScoresClient() {
       setMatchPlayerRoundsByMatch((json.match_player_rounds as Record<string, PlayerRoundAdmin[]> | undefined) ?? {});
       setHandicapRows((json.handicap_scores as HandicapRow[] | undefined) ?? []);
       setPlayers((json.players as PlayerOption[] | undefined) ?? []);
+      const loadedTeams = (json.teams as TeamOption[] | undefined) ?? [];
+      setTeams(loadedTeams);
       setWeeks((json.weeks as WeekOption[] | undefined) ?? []);
+      if (loadedTeams.length >= 2) {
+        setChampionshipTeamAId((current) =>
+          current && loadedTeams.some((t) => t.id === current) ? current : loadedTeams[0]!.id,
+        );
+        setChampionshipTeamBId((current) => {
+          if (current && loadedTeams.some((t) => t.id === current)) return current;
+          return loadedTeams[1]!.id;
+        });
+      } else {
+        setChampionshipTeamAId("");
+        setChampionshipTeamBId("");
+      }
 
       const [lsRes, courseRes] = await Promise.all([
         fetch("/api/admin/league-settings", { headers: authHeader() }),
@@ -294,6 +316,9 @@ export function AdminScoresClient() {
       setMatchPlayerRoundsByMatch({});
       setHandicapRows([]);
       setPlayers([]);
+      setTeams([]);
+      setChampionshipTeamAId("");
+      setChampionshipTeamBId("");
       setWeeks([]);
       setAdminTaskView("menu");
     } finally {
@@ -461,16 +486,28 @@ export function AdminScoresClient() {
   }, [handicapSummary, selectedHandicapPlayerId]);
 
   async function refreshChampionship() {
+    if (!championshipTeamAId || !championshipTeamBId) {
+      setErr("Select both championship teams.");
+      return;
+    }
+    if (championshipTeamAId === championshipTeamBId) {
+      setErr("Championship teams must be different.");
+      return;
+    }
     setLoading(true);
     setErr("");
     try {
       const res = await fetch("/api/admin/championship", {
         method: "POST",
-        headers: authHeader(),
+        headers: { ...authHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          team_a_id: championshipTeamAId,
+          team_b_id: championshipTeamBId,
+        }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? res.statusText);
-      alert("Championship match updated to top two teams by Regular Season points.");
+      alert("Championship match updated.");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -666,14 +703,53 @@ export function AdminScoresClient() {
             ) : null}
 
             {adminTaskView === "championship" ? (
-              <div>
+              <div className="rounded-md border border-zinc-200 bg-white/80 p-3">
+                <p className="text-sm font-medium text-zinc-900">Choose championship teams</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
+                    Team A
+                    <select
+                      className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900"
+                      value={championshipTeamAId}
+                      onChange={(e) => setChampionshipTeamAId(e.target.value)}
+                    >
+                      <option value="">Select team</option>
+                      {teams.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-xs text-zinc-600">
+                    Team B
+                    <select
+                      className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900"
+                      value={championshipTeamBId}
+                      onChange={(e) => setChampionshipTeamBId(e.target.value)}
+                    >
+                      <option value="">Select team</option>
+                      {teams.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
                 <button
                   type="button"
                   onClick={refreshChampionship}
-                  disabled={loading || !secret}
-                  className="rounded-md border border-emerald-800 bg-white px-4 py-2 text-sm font-medium text-emerald-900 disabled:opacity-50"
+                  disabled={
+                    loading ||
+                    !secret ||
+                    !championshipTeamAId ||
+                    !championshipTeamBId ||
+                    championshipTeamAId === championshipTeamBId
+                  }
+                  className="mt-3 rounded-md border border-emerald-800 bg-white px-4 py-2 text-sm font-medium text-emerald-900 disabled:opacity-50"
                 >
-                  Set championship to top 2
+                  Set championship teams
                 </button>
               </div>
             ) : null}

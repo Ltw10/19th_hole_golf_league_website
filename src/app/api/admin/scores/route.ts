@@ -233,6 +233,7 @@ export async function GET(req: Request) {
     data: data ?? [],
     in_progress_matchups,
     weeks: weeks ?? [],
+    teams: (teams ?? []).map((t) => ({ id: t.id as string, name: t.name as string })),
     handicap_scores: handicap_scores ?? [],
     players: playersWithTeam,
     match_player_rounds: matchPlayerRounds,

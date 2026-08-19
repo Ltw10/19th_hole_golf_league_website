@@ -1,6 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
+import { CHAMPIONSHIP_WEEK_NUMBER } from "@/lib/nhgl";
 import { SCHEDULE_CURRENT_WEEK_ANCHOR } from "@/lib/schedule";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const links = [
   {
@@ -29,9 +31,58 @@ const links = [
   },
 ];
 
-export default function Home() {
+const championshipPreview = {
+  seasonLabel: "2026 Champions",
+  playerNames: ["Jordan Blake", "Mason Reed"],
+};
+
+export default async function Home() {
+  let showChampionshipBanner = false;
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: week } = await supabase
+      .from("season_weeks")
+      .select("id")
+      .eq("week_number", CHAMPIONSHIP_WEEK_NUMBER)
+      .maybeSingle();
+
+    if (week?.id) {
+      const { data: match } = await supabase.from("matches").select("id").eq("week_id", week.id).maybeSingle();
+      if (match?.id) {
+        const { data: submission } = await supabase
+          .from("score_submissions")
+          .select("id")
+          .eq("match_id", match.id)
+          .maybeSingle();
+        showChampionshipBanner = Boolean(submission?.id);
+      }
+    }
+  } catch {
+    showChampionshipBanner = false;
+  }
+
   return (
     <div className="flex min-w-0 flex-col gap-10 sm:gap-12 lg:gap-14">
+      {showChampionshipBanner ? (
+        <section
+          aria-labelledby="championship-preview-heading"
+          className="rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-100 via-amber-50 to-emerald-50 px-4 py-4 shadow-[0_8px_26px_-14px_rgba(146,64,14,0.35)] sm:px-6"
+        >
+          <p className="text-center text-xs font-semibold uppercase tracking-[0.22em] text-amber-900/80">
+            Championship Final
+          </p>
+          <h2
+            id="championship-preview-heading"
+            className="mt-1 text-center text-xl font-bold tracking-tight text-emerald-950 sm:text-2xl"
+          >
+            🏆 Congrats to the {championshipPreview.seasonLabel}!
+          </h2>
+          <p className="mt-1 text-center text-sm text-emerald-900/80">
+            {championshipPreview.playerNames.join(" & ")}
+          </p>
+        </section>
+      ) : null}
+
       <section
         aria-labelledby="home-heading"
         className="relative isolate overflow-hidden rounded-2xl border border-amber-200/50 bg-gradient-to-br from-[#faf6ed] via-[#f5f0e6] to-[#e6efe4] px-4 py-8 shadow-[0_8px_40px_-12px_rgba(20,60,40,0.18)] sm:rounded-[2rem] sm:px-8 sm:py-12 lg:px-12 lg:py-14"

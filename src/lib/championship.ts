@@ -2,25 +2,38 @@ import { CHAMPIONSHIP_WEEK_NUMBER } from "@/lib/nhgl";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 /**
- * Sets the championship-week match to the top two teams by Regular Season points (ties break by team_id).
+ * Sets the championship-week match.
+ * - If team IDs are provided, uses those directly.
+ * - Otherwise uses top two by Regular Season points (ties break by team_id).
  */
-export async function refreshChampionshipMatchup(): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function refreshChampionshipMatchup(
+  teamAId?: string,
+  teamBId?: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     const admin = createAdminSupabaseClient();
+    let top = teamAId ?? "";
+    let second = teamBId ?? "";
 
-    const { data: standings, error: sErr } = await admin
-      .from("v_regular_season_team_points")
-      .select("team_id, regular_season_points")
-      .order("regular_season_points", { ascending: false })
-      .order("team_id", { ascending: true });
+    if (top && second) {
+      if (top === second) return { ok: false, error: "Championship teams must be different." };
+      const { data: teams, error: teamErr } = await admin.from("teams").select("id").in("id", [top, second]);
+      if (teamErr) return { ok: false, error: teamErr.message };
+      if (!teams || teams.length !== 2) return { ok: false, error: "One or both selected teams were not found." };
+    } else {
+      const { data: standings, error: sErr } = await admin
+        .from("v_regular_season_team_points")
+        .select("team_id, regular_season_points")
+        .order("regular_season_points", { ascending: false })
+        .order("team_id", { ascending: true });
 
-    if (sErr) return { ok: false, error: sErr.message };
-    if (!standings || standings.length < 2) {
-      return { ok: false, error: "Need at least two teams with standings data." };
+      if (sErr) return { ok: false, error: sErr.message };
+      if (!standings || standings.length < 2) {
+        return { ok: false, error: "Need at least two teams with standings data." };
+      }
+      top = standings[0]!.team_id;
+      second = standings[1]!.team_id;
     }
-
-    const top = standings[0]!.team_id;
-    const second = standings[1]!.team_id;
 
     const { data: week, error: wErr } = await admin
       .from("season_weeks")

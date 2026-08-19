@@ -1,5 +1,5 @@
 import { SupabaseConnectionHelp } from "@/components/SupabaseConnectionHelp";
-import { filterTeamStandingsRows } from "@/lib/nhgl";
+import { CHAMPIONSHIP_WEEK_NUMBER, filterTeamStandingsRows } from "@/lib/nhgl";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -13,11 +13,38 @@ type SkinRow = {
   net_money: number;
 };
 
+function buildPlaceLabels(rows: TeamRow[]): string[] {
+  const labels: string[] = [];
+  for (let i = 0; i < rows.length; i += 1) {
+    const currentPoints = Number(rows[i]!.regular_season_points);
+    let groupEnd = i;
+    while (
+      groupEnd + 1 < rows.length &&
+      Number(rows[groupEnd + 1]!.regular_season_points) === currentPoints
+    ) {
+      groupEnd += 1;
+    }
+
+    const place = i + 1;
+    const label = groupEnd > i ? `T${place}` : String(place);
+    for (let j = i; j <= groupEnd; j += 1) labels[j] = label;
+    i = groupEnd;
+  }
+  return labels;
+}
+
+function getTeamPlaceBadge(rank: number): string {
+  if (rank === 1) return "🏆";
+  if (rank === 2) return "🥈";
+  return "";
+}
+
 export default async function StandingsPage() {
   let loadError: string | null = null;
   let teamRows: TeamRow[] = [];
   let skinRows: SkinRow[] = [];
   let skinWarning: string | null = null;
+  let showChampionshipBadges = false;
 
   try {
     const supabase = await createServerSupabaseClient();
@@ -46,6 +73,27 @@ export default async function StandingsPage() {
       });
       if (sErr) skinWarning = sErr.message;
     }
+
+    const { data: championshipWeek } = await supabase
+      .from("season_weeks")
+      .select("id")
+      .eq("week_number", CHAMPIONSHIP_WEEK_NUMBER)
+      .maybeSingle();
+    if (championshipWeek?.id) {
+      const { data: championshipMatch } = await supabase
+        .from("matches")
+        .select("id")
+        .eq("week_id", championshipWeek.id)
+        .maybeSingle();
+      if (championshipMatch?.id) {
+        const { data: championshipSubmission } = await supabase
+          .from("score_submissions")
+          .select("id")
+          .eq("match_id", championshipMatch.id)
+          .maybeSingle();
+        showChampionshipBadges = Boolean(championshipSubmission?.id);
+      }
+    }
   } catch (e) {
     loadError =
       e instanceof Error ? e.message : "Configure Supabase to load standings.";
@@ -53,6 +101,7 @@ export default async function StandingsPage() {
 
   const scorecardShell =
     "overflow-hidden rounded-sm border-2 border-emerald-900/35 bg-[#faf8f0] shadow-[3px_4px_0_0_rgba(6,60,45,0.1)]";
+  const placeLabels = buildPlaceLabels(teamRows);
 
   return (
     <div className="min-w-0 space-y-6">
@@ -62,7 +111,7 @@ export default async function StandingsPage() {
         </p>
         <h1 className="mt-1 text-center text-2xl font-bold tracking-tight text-emerald-950">Standings</h1>
         <p className="mt-1 text-center text-sm text-emerald-900/75">
-          Championship takes the top two teams.
+          Championship takes the top two teams. Standings points are regular season only.
         </p>
       </div>
 
@@ -108,24 +157,31 @@ export default async function StandingsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {teamRows.map((row, i) => (
-                        <tr
-                          key={row.team_name}
-                          className={`border-b border-emerald-900/15 last:border-b-0 ${
-                            i % 2 === 1 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"
-                          }`}
-                        >
-                          <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono text-sm tabular-nums text-emerald-800/90">
-                            {i + 1}
-                          </td>
-                          <td className="border-r border-emerald-900/15 px-3 py-2 font-medium text-emerald-950">
-                            {row.team_name}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono text-sm font-semibold tabular-nums text-emerald-950">
-                            {Number(row.regular_season_points).toFixed(1)}
-                          </td>
-                        </tr>
-                      ))}
+                      {teamRows.map((row, i) => {
+                        const rank = i + 1;
+                        const badge = showChampionshipBadges ? getTeamPlaceBadge(rank) : "";
+                        return (
+                          <tr
+                            key={row.team_name}
+                            className={`border-b border-emerald-900/15 last:border-b-0 ${
+                              i % 2 === 1 ? "bg-[#f3f0e6]/90" : "bg-[#faf8f0]"
+                            }`}
+                          >
+                            <td className="border-r border-emerald-900/15 px-2 py-2 text-center font-mono text-sm tabular-nums text-emerald-800/90">
+                              {placeLabels[i] ?? rank}
+                            </td>
+                            <td className="border-r border-emerald-900/15 px-3 py-2 font-medium text-emerald-950">
+                              <span className="inline-flex items-center gap-1.5">
+                                {row.team_name}
+                                {badge && <span aria-label={`${rank} place badge`}>{badge}</span>}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-sm font-semibold tabular-nums text-emerald-950">
+                              {Number(row.regular_season_points).toFixed(1)}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

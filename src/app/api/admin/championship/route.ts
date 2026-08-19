@@ -15,7 +15,16 @@ function verify(req: Request) {
 
 export async function POST(req: Request) {
   if (!verify(req)) return unauthorized();
-  const result = await refreshChampionshipMatchup();
+  let teamAId: string | undefined;
+  let teamBId: string | undefined;
+  try {
+    const body = (await req.json()) as { team_a_id?: unknown; team_b_id?: unknown };
+    teamAId = typeof body.team_a_id === "string" ? body.team_a_id : undefined;
+    teamBId = typeof body.team_b_id === "string" ? body.team_b_id : undefined;
+  } catch {
+    // Allow empty body for fallback auto-top-2 behavior.
+  }
+  const result = await refreshChampionshipMatchup(teamAId, teamBId);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json({ ok: true });
 }
