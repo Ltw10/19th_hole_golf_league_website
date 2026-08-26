@@ -1,5 +1,86 @@
 import { CHAMPIONSHIP_WEEK_NUMBER } from "@/lib/nhgl";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+export type ChampionshipResult = {
+  winnerTeamId: string;
+  runnerUpTeamId: string;
+  championPlayerNames: string[];
+};
+
+type ChampionshipClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
+
+/**
+ * Returns championship outcome once a score submission exists for championship week.
+ */
+export async function getChampionshipResult(
+  client?: ChampionshipClient,
+): Promise<ChampionshipResult | null> {
+  try {
+    const supabase = client ?? (await createServerSupabaseClient());
+
+    const { data: week } = await supabase
+      .from("season_weeks")
+      .select("id")
+      .eq("week_number", CHAMPIONSHIP_WEEK_NUMBER)
+      .maybeSingle();
+    if (!week?.id) return null;
+
+    const { data: match } = await supabase
+      .from("matches")
+      .select("id, team_a_id, team_b_id")
+      .eq("week_id", week.id)
+      .maybeSingle();
+    if (!match?.id || !match.team_a_id || !match.team_b_id) return null;
+
+    const { data: submission } = await supabase
+      .from("score_submissions")
+      .select("id, team_a_points, team_b_points, team_a_id, team_b_id")
+      .eq("match_id", match.id)
+      .maybeSingle();
+    if (!submission?.id) return null;
+
+    const teamAId = (submission.team_a_id as string | null) ?? (match.team_a_id as string);
+    const teamBId = (submission.team_b_id as string | null) ?? (match.team_b_id as string);
+    const teamAPoints = Number(submission.team_a_points);
+    const teamBPoints = Number(submission.team_b_points);
+    if (!Number.isFinite(teamAPoints) || !Number.isFinite(teamBPoints)) return null;
+
+    const winnerTeamId = teamAPoints >= teamBPoints ? teamAId : teamBId;
+    const runnerUpTeamId = winnerTeamId === teamAId ? teamBId : teamAId;
+
+    const { data: rounds } = await supabase
+      .from("player_rounds")
+      .select("player_id, played_for_team_id")
+      .eq("match_id", match.id)
+      .eq("played_for_team_id", winnerTeamId);
+
+    const playerIds = [...new Set((rounds ?? []).map((r) => r.player_id as string))];
+    let championPlayerNames: string[] = [];
+
+    if (playerIds.length > 0) {
+      const { data: players } = await supabase.from("players").select("id, name").in("id", playerIds);
+      championPlayerNames = (players ?? [])
+        .map((p) => p.name as string)
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+    }
+
+    if (championPlayerNames.length === 0) {
+      const { data: roster } = await supabase
+        .from("players")
+        .select("name")
+        .eq("team_id", winnerTeamId)
+        .order("name", { ascending: true });
+      championPlayerNames = (roster ?? []).map((p) => p.name as string);
+    }
+
+    if (championPlayerNames.length === 0) return null;
+
+    return { winnerTeamId, runnerUpTeamId, championPlayerNames };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Sets the championship-week match.

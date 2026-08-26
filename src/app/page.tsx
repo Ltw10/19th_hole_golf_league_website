@@ -1,8 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
-import { CHAMPIONSHIP_WEEK_NUMBER } from "@/lib/nhgl";
+import { getChampionshipResult } from "@/lib/championship";
 import { SCHEDULE_CURRENT_WEEK_ANCHOR } from "@/lib/schedule";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 const links = [
   {
@@ -31,55 +32,74 @@ const links = [
   },
 ];
 
-const championshipPreview = {
-  seasonLabel: "2026 Champions",
-  playerNames: ["Jordan Blake", "Mason Reed"],
-};
-
 export default async function Home() {
-  let showChampionshipBanner = false;
-  try {
-    const supabase = await createServerSupabaseClient();
-    const { data: week } = await supabase
-      .from("season_weeks")
-      .select("id")
-      .eq("week_number", CHAMPIONSHIP_WEEK_NUMBER)
-      .maybeSingle();
-
-    if (week?.id) {
-      const { data: match } = await supabase.from("matches").select("id").eq("week_id", week.id).maybeSingle();
-      if (match?.id) {
-        const { data: submission } = await supabase
-          .from("score_submissions")
-          .select("id")
-          .eq("match_id", match.id)
-          .maybeSingle();
-        showChampionshipBanner = Boolean(submission?.id);
-      }
-    }
-  } catch {
-    showChampionshipBanner = false;
-  }
+  const championship = await getChampionshipResult();
+  const championNames = championship?.championPlayerNames ?? [];
 
   return (
     <div className="flex min-w-0 flex-col gap-10 sm:gap-12 lg:gap-14">
-      {showChampionshipBanner ? (
+      {championNames.length > 0 ? (
         <section
           aria-labelledby="championship-preview-heading"
-          className="rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-100 via-amber-50 to-emerald-50 px-4 py-4 shadow-[0_8px_26px_-14px_rgba(146,64,14,0.35)] sm:px-6"
+          className="championship-ribbon relative mx-auto w-full max-w-3xl px-1 sm:px-2"
         >
-          <p className="text-center text-xs font-semibold uppercase tracking-[0.22em] text-amber-900/80">
-            Championship Final
-          </p>
-          <h2
-            id="championship-preview-heading"
-            className="mt-1 text-center text-xl font-bold tracking-tight text-emerald-950 sm:text-2xl"
-          >
-            🏆 Congrats to the {championshipPreview.seasonLabel}!
-          </h2>
-          <p className="mt-1 text-center text-sm text-emerald-900/80">
-            {championshipPreview.playerNames.join(" & ")}
-          </p>
+          <div className="championship-ribbon__frame relative">
+            <svg
+              className="championship-ribbon__svg pointer-events-none absolute inset-0 h-full w-full"
+              viewBox="0 0 800 160"
+              preserveAspectRatio="none"
+              aria-hidden
+            >
+              <defs>
+                <linearGradient id="champ-ribbon-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#fff8e4" />
+                  <stop offset="55%" stopColor="#f1d98f" />
+                  <stop offset="100%" stopColor="#e4c26a" />
+                </linearGradient>
+                <linearGradient id="champ-ribbon-edge" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#d4a84a" />
+                  <stop offset="100%" stopColor="#a87a28" />
+                </linearGradient>
+              </defs>
+              {/* Left fold */}
+              <path
+                d="M78 28 L18 12 L42 80 L18 148 L78 132 Z"
+                fill="url(#champ-ribbon-edge)"
+              />
+              {/* Right fold */}
+              <path
+                d="M722 28 L782 12 L758 80 L782 148 L722 132 Z"
+                fill="url(#champ-ribbon-edge)"
+              />
+              {/* Curved ribbon body */}
+              <path
+                d="M78 28
+                   C 180 8, 320 2, 400 2
+                   C 480 2, 620 8, 722 28
+                   L 722 132
+                   C 620 152, 480 158, 400 158
+                   C 320 158, 180 152, 78 132
+                   Z"
+                fill="url(#champ-ribbon-fill)"
+                stroke="#b8862c"
+                strokeWidth="2"
+              />
+            </svg>
+            <div className="relative z-10 px-10 py-6 text-center sm:px-16 sm:py-7">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-amber-950/75 sm:text-xs">
+                Championship Final
+              </p>
+              <h2
+                id="championship-preview-heading"
+                className="mt-1 text-xl font-bold tracking-tight text-emerald-950 sm:text-2xl"
+              >
+                🏆 Congrats to the 2026 Champions!
+              </h2>
+              <p className="mt-1.5 text-sm font-medium text-emerald-900/85 sm:text-base">
+                {championNames.join(" & ")}
+              </p>
+            </div>
+          </div>
         </section>
       ) : null}
 
