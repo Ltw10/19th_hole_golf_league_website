@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { ChampionshipWeekPhoto } from "@/components/ChampionshipWeekPhoto";
 import { getChampionshipResult } from "@/lib/championship";
 import { SCHEDULE_CURRENT_WEEK_ANCHOR } from "@/lib/schedule";
 
@@ -41,65 +42,65 @@ export default async function Home() {
       {championNames.length > 0 ? (
         <section
           aria-labelledby="championship-preview-heading"
-          className="championship-ribbon relative mx-auto w-full max-w-3xl px-1 sm:px-2"
+          className="mx-auto grid w-full max-w-4xl items-center gap-5 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] sm:gap-7"
         >
-          <div className="championship-ribbon__frame relative">
-            <svg
-              className="championship-ribbon__svg pointer-events-none absolute inset-0 h-full w-full"
-              viewBox="0 0 800 160"
-              preserveAspectRatio="none"
-              aria-hidden
-            >
-              <defs>
-                <linearGradient id="champ-ribbon-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#fff8e4" />
-                  <stop offset="55%" stopColor="#f1d98f" />
-                  <stop offset="100%" stopColor="#e4c26a" />
-                </linearGradient>
-                <linearGradient id="champ-ribbon-edge" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#d4a84a" />
-                  <stop offset="100%" stopColor="#a87a28" />
-                </linearGradient>
-              </defs>
-              {/* Left fold */}
-              <path
-                d="M78 28 L18 12 L42 80 L18 148 L78 132 Z"
-                fill="url(#champ-ribbon-edge)"
-              />
-              {/* Right fold */}
-              <path
-                d="M722 28 L782 12 L758 80 L782 148 L722 132 Z"
-                fill="url(#champ-ribbon-edge)"
-              />
-              {/* Curved ribbon body */}
-              <path
-                d="M78 28
-                   C 180 8, 320 2, 400 2
-                   C 480 2, 620 8, 722 28
-                   L 722 132
-                   C 620 152, 480 158, 400 158
-                   C 320 158, 180 152, 78 132
-                   Z"
-                fill="url(#champ-ribbon-fill)"
-                stroke="#b8862c"
-                strokeWidth="2"
-              />
-            </svg>
-            <div className="relative z-10 px-10 py-6 text-center sm:px-16 sm:py-7">
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-amber-950/75 sm:text-xs">
-                Championship Final
-              </p>
-              <h2
-                id="championship-preview-heading"
-                className="mt-1 text-xl font-bold tracking-tight text-emerald-950 sm:text-2xl"
+          <div className="championship-ribbon relative min-w-0 px-1 sm:px-0">
+            <div className="championship-ribbon__frame relative">
+              <svg
+                className="championship-ribbon__svg pointer-events-none absolute inset-0 h-full w-full"
+                viewBox="0 0 800 160"
+                preserveAspectRatio="none"
+                aria-hidden
               >
-                🏆 Congrats to the 2026 Champions!
-              </h2>
-              <p className="mt-1.5 text-sm font-medium text-emerald-900/85 sm:text-base">
-                {championNames.join(" & ")}
-              </p>
+                <defs>
+                  <linearGradient id="champ-ribbon-fill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#fff8e4" />
+                    <stop offset="55%" stopColor="#f1d98f" />
+                    <stop offset="100%" stopColor="#e4c26a" />
+                  </linearGradient>
+                  <linearGradient id="champ-ribbon-edge" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#d4a84a" />
+                    <stop offset="100%" stopColor="#a87a28" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M78 28 L18 12 L42 80 L18 148 L78 132 Z"
+                  fill="url(#champ-ribbon-edge)"
+                />
+                <path
+                  d="M722 28 L782 12 L758 80 L782 148 L722 132 Z"
+                  fill="url(#champ-ribbon-edge)"
+                />
+                <path
+                  d="M78 28
+                     C 180 8, 320 2, 400 2
+                     C 480 2, 620 8, 722 28
+                     L 722 132
+                     C 620 152, 480 158, 400 158
+                     C 320 158, 180 152, 78 132
+                     Z"
+                  fill="url(#champ-ribbon-fill)"
+                  stroke="#b8862c"
+                  strokeWidth="2"
+                />
+              </svg>
+              <div className="relative z-10 px-10 py-6 text-center sm:px-12 sm:py-7">
+                <p className="text-[0.65rem] font-semibold uppercase tracking-[0.28em] text-amber-950/75 sm:text-xs">
+                  Championship Final
+                </p>
+                <h2
+                  id="championship-preview-heading"
+                  className="mt-1 text-xl font-bold tracking-tight text-emerald-950 sm:text-2xl"
+                >
+                  🏆 Congrats to the 2026 Champions!
+                </h2>
+                <p className="mt-1.5 text-sm font-medium text-emerald-900/85 sm:text-base">
+                  {championNames.join(" & ")}
+                </p>
+              </div>
             </div>
           </div>
+          <ChampionshipWeekPhoto caption={championNames.join(" & ")} />
         </section>
       ) : null}
 
